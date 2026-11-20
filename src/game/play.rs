@@ -20,6 +20,9 @@ const GRAVITY: f32 = 34.0;
 /// A held jump rises JUMP_SPEED² / (2 × GRAVITY) ≈ 3.5 tiles. The meadow's first
 /// platforms stand 3 tiles above the ground, so children get some margin.
 const JUMP_SPEED: f32 = 15.4;
+/// Gravity is this many times stronger while a jump rises with the key let go, so
+/// releasing jump early makes a short hop.
+const JUMP_CUT: f32 = 2.2;
 const MAX_FALL: f32 = 22.0;
 const RUN_SPEED: f32 = 6.2;
 const GROUND_ACCEL: f32 = 48.0;
@@ -174,7 +177,7 @@ fn player_control(
     // Releasing jump early cuts the arc short, so small hops are easy for small hands.
     let mut gravity = GRAVITY;
     if body.vel.y > 0.0 && !keys.any_pressed(jump_keys) {
-        gravity *= 2.2;
+        gravity *= JUMP_CUT;
     }
     let (vel_y, rise) = fall(body.vel.y, gravity, dt);
     body.vel.y = vel_y;
@@ -539,5 +542,95 @@ mod tests {
             assert!(contacts.landed);
         }
         assert_eq!(pos.y, 2.0);
+    }
+
+    /// The highest a jump lifts the feet at `fps` when the key is let go after
+    /// `held_frames` frames, as `player_control` cuts the jump.
+    fn cut_jump_peak(fps: f32, held_frames: usize) -> f32 {
+        let dt = 1.0 / fps;
+        let (mut vel, mut height, mut peak) = (JUMP_SPEED, 0.0_f32, 0.0_f32);
+        let mut frame = 0;
+        while vel > -JUMP_SPEED {
+            let gravity = if vel > 0.0 && frame >= held_frames { GRAVITY * JUMP_CUT } else { GRAVITY };
+            let (next, rise) = fall(vel, gravity, dt);
+            vel = next;
+            height += rise;
+            peak = peak.max(height);
+            frame += 1;
+        }
+        peak
+    }
+
+    #[test]
+    fn a_short_hop_reaches_the_same_height_at_any_frame_rate() {
+        for fps in FRAME_RATES {
+            // The key is let go after about a tenth of a second.
+            let held_frames = (0.1 * fps).round() as usize;
+            let held = held_frames as f32 / fps;
+            let speed = JUMP_SPEED - GRAVITY * held;
+            let exact = JUMP_SPEED * held - GRAVITY * held * held / 2.0 + speed * speed / (2.0 * GRAVITY * JUMP_CUT);
+            let peak = cut_jump_peak(fps, held_frames);
+            assert!((peak - exact).abs() < 0.03, "{fps} fps peaks at {peak}, not {exact}");
+        }
+    }
+
+    #[test]
+    fn the_quickest_tap_still_bumps_the_first_crystal() {
+        // The first crystal's underside is at y = 4; standing on the ground at y = 2 with
+        // a 0.84-tall body, the head reaches it after a 1.16 rise.
+        for fps in FRAME_RATES {
+            let peak = cut_jump_peak(fps, 1);
+            assert!(peak > 1.16 + 0.1, "{fps} fps: a tap rises only {peak}");
+        }
+    }
+
+    #[test]
+    fn hitting_a_ceiling_at_the_top_of_a_jump_stops_below_it() {
+        // In the frame where a jump turns over, the body can still rise while its speed is
+        // already downward. Bumping a ceiling in that frame must stop the body under it,
+        // not count as landing, which would lift the body on top of the block.
+        let half = Vec2::new(0.28, 0.42);
+        let mut grid = Grid { width: 30, ..default() };
+        for col in 0..30 {
+            grid.solids.insert((col, 6), Tile::Block);
+        }
+        let mut checked = 0;
+        for fps in 30..=144 {
+            let dt = 1.0 / fps as f32;
+            // Find the turning frame without the ceiling: rising, yet ending with a
+            // downward speed. Collisions ignore overlaps under EPS, so only a frame that
+            // rises clearly more than that can reach into the ceiling.
+            let (mut vel, mut height) = (JUMP_SPEED, 0.0_f32);
+            let turn = loop {
+                let (next, rise) = fall(vel, GRAVITY, dt);
+                if vel > 0.0 && next < 0.0 {
+                    break (rise > 4.0 * EPS).then_some(height + rise / 4.0);
+                }
+                vel = next;
+                height += rise;
+            };
+            let Some(head_meets_ceiling_at) = turn else { continue };
+            checked += 1;
+
+            // Start low enough that the head reaches the ceiling a quarter of the way
+            // through that frame's rise.
+            let start = 6.0 - half.y * 2.0 - head_meets_ceiling_at;
+            let mut pos = Vec3::new(5.5, start, 0.0);
+            let mut body = Body { vel: Vec2::new(0.0, JUMP_SPEED), half, on_ground: false };
+            let mut bumped = false;
+            for _ in 0..fps {
+                let (vel_y, rise) = fall(body.vel.y, GRAVITY, dt);
+                body.vel.y = vel_y;
+                let contacts = move_body(&mut pos, &mut body, Vec2::new(0.0, rise), &grid);
+                assert!(!contacts.landed, "{fps} fps: the ceiling counted as a floor");
+                if !contacts.head.is_empty() {
+                    bumped = true;
+                    break;
+                }
+            }
+            assert!(bumped, "{fps} fps: the head never reached the ceiling");
+            assert!(pos.y + half.y * 2.0 <= 6.0, "{fps} fps: the body ended up inside or above the ceiling");
+        }
+        assert!(checked > 0, "no frame rate turned over while still rising");
     }
 }
