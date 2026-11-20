@@ -9,7 +9,7 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, Button, observe};
 
-use crate::domain::math::{self, Prompt, Question};
+use crate::domain::math::{self, ColumnOp, Prompt, Question};
 use crate::domain::rules::{GEMS_PER_CRYSTAL, QUESTION_SECONDS, SCORE_CRYSTAL};
 use crate::i18n::{self, Strings};
 
@@ -222,7 +222,7 @@ fn spawn_overlay(
             ))
             .with_children(|b| {
                 b.spawn(label(a, format!("{}", i + 1), 22.0, ui::MUTED));
-                b.spawn(label(a, option.to_string(), 36.0, ui::TEXT));
+                b.spawn(label(a, t.value(*option), 36.0, ui::TEXT));
             })
             .id();
         commands.entity(grid).add_child(button);
@@ -245,8 +245,8 @@ fn spawn_overlay(
     commands.entity(card).add_children(&[header, bar_bg, prompt, grid, feedback]);
 }
 
-/// Draws the question itself. Young players get the school column layout with tens in
-/// red and units in blue; fractions are stacked.
+/// Draws the question itself. Column arithmetic uses the school layout with each place
+/// in its own color (units blue, tens red, hundreds green); fractions are stacked.
 fn spawn_prompt(commands: &mut Commands, a: &GameAssets, t: &Strings, prompt: &Prompt) -> Entity {
     let container = commands
         .spawn(Node {
@@ -259,81 +259,14 @@ fn spawn_prompt(commands: &mut Commands, a: &GameAssets, t: &Strings, prompt: &P
         })
         .id();
     match prompt {
-        Prompt::Vertical { top, bottom, plus } => {
-            // A carry makes a two-digit answer, so the tens column shows even for 4 + 6.
-            let two_columns = *top >= 10 || *bottom >= 10 || (*plus && top + bottom >= 10);
-            let column = commands
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::End,
-                    ..default()
-                })
-                .id();
-            let digit_row = |commands: &mut Commands, sign: &str, value: Option<i64>, size: f32| {
-                commands
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        ..default()
-                    })
-                    .with_children(|r| {
-                        let cell = Node {
-                            width: px(54),
-                            justify_content: JustifyContent::Center,
-                            ..default()
-                        };
-                        r.spawn(cell.clone()).with_child(label(a, sign.to_string(), size, ui::MUTED));
-                        if two_columns {
-                            let tens = value.filter(|v| *v >= 10).map(|v| (v / 10).to_string()).unwrap_or_default();
-                            r.spawn(cell.clone()).with_child(label(a, tens, size, ui::TENS));
-                        }
-                        let units = value.map(|v| (v % 10).to_string()).unwrap_or_else(|| "?".into());
-                        r.spawn(cell).with_child(label(a, units, size, ui::UNITS));
-                    })
-                    .id()
-            };
-            let header = commands
-                .spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    ..default()
-                })
-                .with_children(|r| {
-                    let cell = Node {
-                        width: px(54),
-                        justify_content: JustifyContent::Center,
-                        ..default()
-                    };
-                    r.spawn(cell.clone());
-                    if two_columns {
-                        r.spawn(cell.clone()).with_child(label(a, t.tens_short, 18.0, ui::TENS));
-                    }
-                    r.spawn(cell).with_child(label(a, t.units_short, 18.0, ui::UNITS));
-                })
-                .id();
-            let first = digit_row(commands, "", Some(*top), 60.0);
-            let second = digit_row(commands, if *plus { "+" } else { "−" }, Some(*bottom), 60.0);
-            let line = commands
-                .spawn((
-                    Node {
-                        width: px(if two_columns { 162.0 } else { 108.0 }),
-                        height: px(4),
-                        ..default()
-                    },
-                    BackgroundColor(ui::TEXT),
-                ))
-                .id();
-            let answer = commands
-                .spawn(Node {
-                    width: px(54),
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                })
-                .with_child((label(a, "?", 60.0, ui::TEXT), AccentText))
-                .id();
-            commands.entity(column).add_children(&[header, first, second, line, answer]);
+        Prompt::Vertical { top, bottom, op } => {
+            let column = vertical(commands, a, t, *top, *bottom, *op);
             commands.entity(container).add_child(column);
         }
-        Prompt::Gcd { .. } | Prompt::Lcm { .. } => {
-            commands.entity(container).with_child(label(a, t.prompt_line(prompt), 54.0, ui::TEXT));
+        Prompt::FractionOf { num, den, whole } => {
+            let fraction = stacked_fraction(commands, a, *num, *den);
+            let tail = commands.spawn(label(a, i18n::fill(t.fraction_of_tail, &[whole]), 54.0, ui::TEXT)).id();
+            commands.entity(container).add_children(&[fraction, tail]);
         }
         Prompt::Fraction { left, op, right } => {
             let left = stacked_fraction(commands, a, left.num, left.den);
@@ -342,8 +275,71 @@ fn spawn_prompt(commands: &mut Commands, a: &GameAssets, t: &Strings, prompt: &P
             let equals = commands.spawn((label(a, "= ?", 54.0, ui::TEXT), AccentText)).id();
             commands.entity(container).add_children(&[left, sign, right, equals]);
         }
+        Prompt::Times { .. } | Prompt::Division { .. } | Prompt::Decimal { .. } | Prompt::Gcd { .. } | Prompt::Lcm { .. } => {
+            commands.entity(container).with_child(label(a, t.prompt_line(prompt), 54.0, ui::TEXT));
+        }
     }
     container
+}
+
+/// Column arithmetic: a header with the place names, the two numbers, a line, and the
+/// answer to find. There is one column per digit of the longest number, answer included,
+/// so a carry like 4 + 6 = 10 still gets its tens column.
+fn vertical(commands: &mut Commands, a: &GameAssets, t: &Strings, top: i64, bottom: i64, op: ColumnOp) -> Entity {
+    const CELL: f32 = 54.0;
+    let columns = top.max(bottom).max(op.apply(top, bottom)).to_string().len();
+    let place_color = |place: usize| [ui::UNITS, ui::TENS, ui::HUNDREDS, ui::THOUSANDS][place.min(3)];
+    let cell = || Node {
+        width: px(CELL),
+        justify_content: JustifyContent::Center,
+        ..default()
+    };
+    let row = |commands: &mut Commands, sign: &str, size: f32, text: &dyn Fn(usize) -> String| {
+        commands
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                ..default()
+            })
+            .with_children(|r| {
+                r.spawn(cell()).with_child(label(a, sign.to_string(), size, ui::MUTED));
+                for place in (0..columns).rev() {
+                    r.spawn(cell()).with_child(label(a, text(place), size, place_color(place)));
+                }
+            })
+            .id()
+    };
+    // Digits right-aligned under their place; leading places stay empty.
+    let digits = |n: i64| {
+        move |place: usize| {
+            let scale = 10_i64.pow(place as u32);
+            if place == 0 || n >= scale { (n / scale % 10).to_string() } else { String::new() }
+        }
+    };
+    let header = row(commands, "", 18.0, &|place| t.place_short(place).to_string());
+    let first = row(commands, "", 60.0, &digits(top));
+    let second = row(commands, &op.symbol().to_string(), 60.0, &digits(bottom));
+    let line = commands
+        .spawn((
+            Node {
+                width: px(CELL * (columns + 1) as f32),
+                height: px(4),
+                ..default()
+            },
+            BackgroundColor(ui::TEXT),
+        ))
+        .id();
+    let answer = commands
+        .spawn(cell())
+        .with_child((label(a, "?", 60.0, ui::TEXT), AccentText))
+        .id();
+    commands
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::End,
+            ..default()
+        })
+        .add_children(&[header, first, second, line, answer])
+        .id()
 }
 
 fn stacked_fraction(commands: &mut Commands, a: &GameAssets, num: i64, den: i64) -> Entity {
@@ -450,7 +446,7 @@ fn answer_input(
     let q = &asking.question;
     let (verdict, color) = match asking.outcome.unwrap() {
         Outcome::Right => (t.correct.to_string(), ui::GOOD),
-        _ => (i18n::fill(t.not_quite, &[&q.correct_value()]), ui::BAD),
+        _ => (i18n::fill(t.not_quite, &[&t.value(q.correct_value())]), ui::BAD),
     };
     let explanation = t.explain(q);
     for area in &feedback {
@@ -506,7 +502,7 @@ fn finish(
             for (n, child) in children.iter().enumerate() {
                 if let Ok(mut t) = texts.get_mut(child) {
                     t.0 = if n == 0 {
-                        i18n::fill(tr.time_up_answer, &[&asking.question.correct_value()])
+                        i18n::fill(tr.time_up_answer, &[&tr.value(asking.question.correct_value())])
                     } else {
                         String::new()
                     };

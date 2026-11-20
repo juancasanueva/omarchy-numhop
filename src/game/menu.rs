@@ -318,7 +318,10 @@ fn navigate(
                 choices.players = if choices.players == 1 { 2 } else { 1 };
                 choices.row = 0;
             }
-            Row::Age(p) => choices.configs[p].age = choices.configs[p].age.toggle(),
+            Row::Age(p) => {
+                let age = choices.configs[p].age;
+                choices.configs[p].age = if left { age.previous() } else { age.next() };
+            }
             Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
             Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),
             _ => {}

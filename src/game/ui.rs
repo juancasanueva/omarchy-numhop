@@ -11,6 +11,9 @@ pub const TEXT: Color = Color::srgb(0.97, 0.97, 0.98);
 pub const MUTED: Color = Color::srgb(0.68, 0.70, 0.74);
 pub const GOOD: Color = Color::srgb(0.35, 0.85, 0.45);
 pub const BAD: Color = Color::srgb(0.95, 0.35, 0.35);
+// Place-value colors for column arithmetic.
+pub const THOUSANDS: Color = Color::srgb(0.78, 0.56, 0.96);
+pub const HUNDREDS: Color = Color::srgb(0.42, 0.82, 0.48);
 pub const TENS: Color = Color::srgb(0.95, 0.38, 0.35);
 pub const UNITS: Color = Color::srgb(0.38, 0.62, 1.0);
 

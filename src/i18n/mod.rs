@@ -7,7 +7,8 @@
 use std::fmt::Display;
 
 use crate::domain::math::{
-    self, AgeLevel, FracOp, Prompt, Question, Topic, common_denominator, factor_string,
+    self, AgeLevel, AnswerValue, ColumnOp, ColumnStep, Decimal, FracOp, Prompt, Question, Topic,
+    common_denominator, factor_string, multiplication_steps, subtraction_steps,
 };
 
 mod en;
@@ -91,12 +92,19 @@ catalog! {
     loading, load_failed,
     tagline, players, player_n, player_level, player_hero, start, settings, menu_hint,
     language, back, settings_hint,
-    age_six, age_twelve,
-    topic_addition, topic_subtraction, topic_gcd, topic_lcm, topic_fractions,
-    gcd_prompt, lcm_prompt, tens_short, units_short,
+    age_six, age_eight, age_ten, age_twelve,
+    topic_addition, topic_subtraction, topic_subtraction_borrow, topic_times_tables,
+    topic_multiplication, topic_division, topic_decimals, topic_fraction_of,
+    topic_gcd, topic_lcm, topic_fractions,
+    gcd_prompt, lcm_prompt, division_prompt, fraction_of_prompt, fraction_of_tail,
+    thousands_short, hundreds_short, tens_short, units_short, decimal_point,
     crystal_question, gate_question, answer_hint, correct, not_quite, press_space_continue,
     time_up_answer, seconds,
     explain_add_single, explain_add_columns, explain_sub_single, explain_sub_columns,
+    col_units, col_tens, col_hundreds, col_thousands,
+    explain_col_sub, explain_col_sub_borrow, explain_col_down, explain_col_mul, explain_col_mul_carry,
+    explain_answer, explain_times, explain_division, explain_decimal,
+    explain_fraction_of, explain_fraction_of_unit,
     explain_gcd, explain_lcm, explain_frac_common, explain_frac_mul, explain_frac_div,
     ready, world_line, lives_none, lives_one, lives_many, lost_life, over_to, game_over,
     see_scores, world_cleared, champion, cleared_all_over_to, cleared_all,
@@ -121,6 +129,8 @@ impl Strings {
     pub fn age(&self, age: AgeLevel) -> &'static str {
         match age {
             AgeLevel::Six => self.age_six,
+            AgeLevel::Eight => self.age_eight,
+            AgeLevel::Ten => self.age_ten,
             AgeLevel::Twelve => self.age_twelve,
         }
     }
@@ -129,6 +139,12 @@ impl Strings {
         match topic {
             Topic::Addition => self.topic_addition,
             Topic::Subtraction => self.topic_subtraction,
+            Topic::SubtractionBorrow => self.topic_subtraction_borrow,
+            Topic::TimesTables => self.topic_times_tables,
+            Topic::Multiplication => self.topic_multiplication,
+            Topic::Division => self.topic_division,
+            Topic::Decimals => self.topic_decimals,
+            Topic::FractionOf => self.topic_fraction_of,
             Topic::Gcd => self.topic_gcd,
             Topic::Lcm => self.topic_lcm,
             Topic::Fractions => self.topic_fractions,
@@ -155,19 +171,105 @@ impl Strings {
         self.ordinals[place.min(self.ordinals.len() - 1)]
     }
 
-    /// The single-line question for GCD and LCM, with the local abbreviation.
+    /// The single-line question, with the local notation: abbreviations, the division
+    /// sign, and the decimal separator.
     pub fn prompt_line(&self, prompt: &Prompt) -> String {
         match prompt {
             Prompt::Gcd { a, b } => fill(self.gcd_prompt, &[a, b]),
             Prompt::Lcm { a, b } => fill(self.lcm_prompt, &[a, b]),
+            Prompt::Division { dividend, divisor } => fill(self.division_prompt, &[dividend, divisor]),
+            Prompt::Decimal { left, right, plus } => format!(
+                "{} {} {} = ?",
+                self.decimal(*left),
+                if *plus { '+' } else { '−' },
+                self.decimal(*right)
+            ),
+            Prompt::FractionOf { num, den, whole } => fill(self.fraction_of_prompt, &[num, den, whole]),
             other => other.one_line(),
         }
+    }
+
+    /// An answer as the player reads it, with the local decimal separator.
+    pub fn value(&self, value: AnswerValue) -> String {
+        match value {
+            AnswerValue::Decimal(d) => self.decimal(d),
+            other => other.to_string(),
+        }
+    }
+
+    pub fn decimal(&self, d: Decimal) -> String {
+        d.to_string().replace('.', self.decimal_point)
+    }
+
+    /// The short column headers, units first: U, T, H, Th in English; U, D, C, UM in Spanish.
+    pub fn place_short(&self, place: usize) -> &'static str {
+        [self.units_short, self.tens_short, self.hundreds_short, self.thousands_short][place.min(3)]
+    }
+
+    fn place_name(&self, place: usize) -> &'static str {
+        [self.col_units, self.col_tens, self.col_hundreds, self.col_thousands][place.min(3)]
+    }
+
+    /// Written subtraction column by column; a carried 1 is added to the next bottom digit.
+    fn explain_subtraction_steps(&self, steps: &[ColumnStep], answer: i64) -> String {
+        let mut lines: Vec<String> = steps
+            .iter()
+            .map(|s| {
+                let name = self.place_name(s.place);
+                let bottom = match (s.bottom, s.carry_in) {
+                    (b, 0) => b.to_string(),
+                    (0, c) => c.to_string(),
+                    (b, c) => format!("({b} + {c})"),
+                };
+                if s.borrowed {
+                    fill(self.explain_col_sub_borrow, &[&name, &s.top, &bottom, &s.value, &(s.top + 10)])
+                } else if s.bottom == 0 && s.carry_in == 0 {
+                    fill(self.explain_col_down, &[&name, &s.top])
+                } else {
+                    fill(self.explain_col_sub, &[&name, &s.top, &bottom, &s.value])
+                }
+            })
+            .collect();
+        lines.push(fill(self.explain_answer, &[&answer]));
+        lines.join(" ")
+    }
+
+    /// Written multiplication by one digit, column by column, with the carries.
+    fn explain_multiplication_steps(&self, steps: &[ColumnStep], answer: i64) -> String {
+        let mut lines: Vec<String> = steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let name = self.place_name(s.place);
+                let plus = if s.carry_in > 0 { format!(" + {}", s.carry_in) } else { String::new() };
+                if i + 1 < steps.len() && s.value >= 10 {
+                    fill(
+                        self.explain_col_mul_carry,
+                        &[&name, &s.top, &s.bottom, &plus, &s.value, &(s.value % 10), &s.carry_out],
+                    )
+                } else {
+                    fill(self.explain_col_mul, &[&name, &s.top, &s.bottom, &plus, &s.value])
+                }
+            })
+            .collect();
+        lines.push(fill(self.explain_answer, &[&answer]));
+        lines.join(" ")
     }
 
     /// The worked solution shown after an answer.
     pub fn explain(&self, q: &Question) -> String {
         match &q.prompt {
-            Prompt::Vertical { top, bottom, plus: true } => {
+            // Any borrow needs the column-by-column walk-through; the short form below
+            // only fits subtractions without borrowing.
+            Prompt::Vertical { top, bottom, op: ColumnOp::Sub }
+                if subtraction_steps(*top, *bottom).iter().any(|s| s.borrowed) =>
+            {
+                self.explain_subtraction_steps(&subtraction_steps(*top, *bottom), top - bottom)
+            }
+            Prompt::Vertical { top, bottom, op: ColumnOp::Mul } => {
+                self.explain_multiplication_steps(&multiplication_steps(*top, *bottom), top * bottom)
+            }
+            Prompt::Vertical { top, bottom, op: ColumnOp::Add } => {
                 let answer = top + bottom;
                 if *top < 10 && *bottom < 10 {
                     fill(self.explain_add_single, &[top, bottom, &answer, &(answer % 10)])
@@ -188,7 +290,7 @@ impl Strings {
                     )
                 }
             }
-            Prompt::Vertical { top, bottom, plus: false } => {
+            Prompt::Vertical { top, bottom, op: ColumnOp::Sub } => {
                 let answer = top - bottom;
                 if *top < 10 {
                     fill(self.explain_sub_single, &[top, bottom, &answer])
@@ -206,6 +308,34 @@ impl Strings {
                         ],
                     )
                 }
+            }
+            Prompt::Times { a, b } => {
+                let counted: Vec<String> = (1..=*b).map(|k| (a * k).to_string()).collect();
+                fill(self.explain_times, &[a, b, &(a * b), &counted.join(", ")])
+            }
+            Prompt::Division { dividend, divisor } => {
+                fill(self.explain_division, &[dividend, divisor, &(dividend / divisor)])
+            }
+            Prompt::Decimal { left, right, plus } => {
+                // Line the points up by writing every number with the same decimal places.
+                let places = left.places.max(right.places);
+                let h = if *plus { left.hundredths + right.hundredths } else { left.hundredths - right.hundredths };
+                fill(
+                    self.explain_decimal,
+                    &[
+                        &self.decimal(left.with_places(places)),
+                        &if *plus { '+' } else { '−' },
+                        &self.decimal(right.with_places(places)),
+                        &self.decimal(Decimal::shortest(h).with_places(places)),
+                    ],
+                )
+            }
+            Prompt::FractionOf { num: 1, den, whole } => {
+                fill(self.explain_fraction_of_unit, &[&1, den, whole, &(whole / den)])
+            }
+            Prompt::FractionOf { num, den, whole } => {
+                let part = whole / den;
+                fill(self.explain_fraction_of, &[num, den, whole, &part, &(part * num)])
             }
             Prompt::Gcd { a, b } => fill(
                 self.explain_gcd,
@@ -315,17 +445,79 @@ mod tests {
         let mut rng = Rng::new(9);
         for lang in Lang::ALL {
             let t = lang.strings();
-            for topic in [Topic::Addition, Topic::Subtraction, Topic::Gcd, Topic::Lcm, Topic::Fractions] {
+            for topic in Topic::ALL {
                 for tier in 1..=4 {
                     for _ in 0..50 {
                         let q = generate_topic(topic, tier, &mut rng);
                         let text = t.explain(&q);
                         assert!(!text.contains('{'), "{lang:?}: {text}");
-                        assert!(text.contains(&q.correct_value().to_string()), "{lang:?}: {text}");
+                        assert!(text.contains(&t.value(q.correct_value())), "{lang:?}: {text}");
                     }
                 }
             }
         }
+    }
+
+    #[test]
+    fn spanish_uses_school_notation() {
+        let t = Lang::Es.strings();
+        assert_eq!(t.prompt_line(&Prompt::Division { dividend: 84, divisor: 7 }), "84 : 7 = ?");
+        let left = Decimal::new(350, 1);
+        let right = Decimal::new(125, 2);
+        assert_eq!(t.prompt_line(&Prompt::Decimal { left, right, plus: true }), "3,5 + 1,25 = ?");
+        assert_eq!(t.value(AnswerValue::Decimal(Decimal::shortest(475))), "4,75");
+        assert_eq!(Lang::En.strings().value(AnswerValue::Decimal(Decimal::shortest(475))), "4.75");
+        assert_eq!(
+            [t.place_short(0), t.place_short(1), t.place_short(2), t.place_short(3)],
+            ["U", "D", "C", "UM"]
+        );
+    }
+
+    #[test]
+    fn any_borrowing_subtraction_gets_the_column_walk_through() {
+        // The explanation follows the numbers, not the topic: a borrow anywhere is explained.
+        let t = Lang::En.strings();
+        let q = Question {
+            topic: Topic::Subtraction,
+            tier: 1,
+            prompt: Prompt::Vertical { top: 52, bottom: 27, op: ColumnOp::Sub },
+            options: [AnswerValue::Whole(25), AnswerValue::Whole(1), AnswerValue::Whole(2), AnswerValue::Whole(3)],
+            correct: 0,
+        };
+        assert_eq!(
+            t.explain(&q),
+            "Units: 2 is less than 7, so 12 − 7 = 5 and carry 1. Tens: 5 − (2 + 1) = 2. Answer: 25."
+        );
+    }
+
+    #[test]
+    fn column_explanations_walk_every_digit() {
+        let t = Lang::En.strings();
+        let sub = Question {
+            topic: Topic::SubtractionBorrow,
+            tier: 4,
+            prompt: Prompt::Vertical { top: 432, bottom: 175, op: ColumnOp::Sub },
+            options: [AnswerValue::Whole(257), AnswerValue::Whole(1), AnswerValue::Whole(2), AnswerValue::Whole(3)],
+            correct: 0,
+        };
+        assert_eq!(
+            t.explain(&sub),
+            "Units: 2 is less than 5, so 12 − 5 = 7 and carry 1. \
+             Tens: 3 is less than (7 + 1), so 13 − (7 + 1) = 5 and carry 1. \
+             Hundreds: 4 − (1 + 1) = 2. Answer: 257."
+        );
+        let mul = Question {
+            topic: Topic::Multiplication,
+            tier: 4,
+            prompt: Prompt::Vertical { top: 347, bottom: 6, op: ColumnOp::Mul },
+            options: [AnswerValue::Whole(2082), AnswerValue::Whole(1), AnswerValue::Whole(2), AnswerValue::Whole(3)],
+            correct: 0,
+        };
+        assert_eq!(
+            t.explain(&mul),
+            "Units: 7 × 6 = 42, write 2 and carry 4. Tens: 4 × 6 + 4 = 28, write 8 and carry 2. \
+             Hundreds: 3 × 6 + 2 = 20. Answer: 2082."
+        );
     }
 
     #[test]

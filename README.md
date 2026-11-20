@@ -27,10 +27,14 @@ blends between them as they move, and speeds the walk up as they run.
   two-player game the turn passes. Stomp Grumbles for +100.
 - **Difficulty** grows from ★ to ★★★★ as the player progresses through the worlds.
 
-| Level  | Topics |
-|--------|--------|
-| Age 6  | Addition with carrying, subtraction without borrowing, in school column layout (tens in red, units in blue) |
-| Age 12 | Greatest common divisor, least common multiple, fractions (+ − × ÷) simplified to lowest terms |
+The levels follow the Spanish primary curriculum (Primaria), from 1º to 6º.
+
+| Level  | School year | Topics |
+|--------|-------------|--------|
+| Age 6  | 1º | Addition with carrying, subtraction without borrowing, in school column layout (tens in red, units in blue) |
+| Age 8  | 2º–3º | Subtraction with borrowing up to three digits, times tables (2, 5 and 10 first), multiplying by one digit with carries (hundreds in green) |
+| Age 10 | 4º–5º | Exact division by one digit, adding and subtracting decimals (tenths, then hundredths), a fraction of a number |
+| Age 12 | 6º | Greatest common divisor, least common multiple, fractions (+ − × ÷) simplified to lowest terms |
 
 After every answer, the game shows the worked solution.
 
@@ -57,8 +61,9 @@ main menu; the menu switches at once and the choice is saved to
 (`~/.config/omarchy/language`), then your system locale, then English.
 `NUMHOP_LANG=es numhop` picks a language for one run without saving it.
 
-The Spanish version uses the school notation kids see in class: MCD and mcm, and
-D/U (decenas/unidades) over the columns. Every string lives in `src/i18n/`, one
+The Spanish version uses the school notation kids see in class: MCD and mcm,
+UM/C/D/U over the columns, `:` for division, the decimal comma, and subtraction
+with "me llevo una" (the carried 1 goes onto the next bottom digit). Every string lives in `src/i18n/`, one
 file per language; adding a language means adding one file, and the compiler
 points at anything left untranslated.
 
