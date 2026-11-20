@@ -1,0 +1,20 @@
+[package]
+name = "numhop"
+version = "0.1.0"
+edition = "2024"
+description = "A 3D math platformer for Omarchy"
+license = "MIT"
+
+[dependencies]
+bevy = "0.20.1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true
