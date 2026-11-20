@@ -37,8 +37,13 @@ impl SavedRecords {
 pub struct BestBefore(pub Vec<u32>);
 
 pub fn plugin(app: &mut App) {
-    app.insert_resource(load())
-        .add_systems(OnEnter(Screen::Banner), keep_records)
+    app.insert_resource(load());
+    lifecycle(app);
+}
+
+/// When records are merged, and when the before-the-match snapshot is taken and dropped.
+fn lifecycle(app: &mut App) {
+    app.add_systems(OnEnter(Screen::Banner), keep_records)
         .add_systems(OnEnter(Screen::Results), keep_records)
         .add_systems(OnExit(Screen::Results), forget_best_before)
         .add_systems(OnEnter(Screen::Menu), forget_best_before);
@@ -50,7 +55,11 @@ fn load() -> SavedRecords {
     if capturing() {
         return SavedRecords::in_memory(Records::default());
     }
-    let Some(path) = settings::records_path() else { return SavedRecords::in_memory(Records::default()) };
+    load_from(settings::records_path())
+}
+
+fn load_from(path: Option<PathBuf>) -> SavedRecords {
+    let Some(path) = path else { return SavedRecords::in_memory(Records::default()) };
     match settings::load_records(&path) {
         Ok(records) => SavedRecords { records, path: Some(path), unsaved: false },
         Err(err) => {
@@ -75,8 +84,9 @@ fn keep_records(
         commands.insert_resource(BestBefore(bests));
     }
     for (i, p) in players.iter().enumerate() {
-        // Being in world N means N worlds were cleared: a chosen start is limited to
-        // worlds already reached, and clearing the last world leaves `world` at the total.
+        // Being in world N means N worlds were cleared, and clearing the last world leaves
+        // `world` at the total. That holds for a chosen start only because the menu limits
+        // it to worlds already reached; `Match::new` itself only keeps it inside the game.
         let worlds_cleared = p.world;
         let gain = saved.records.merge(&SavedRecords::key(&names, i), p.score, worlds_cleared);
         saved.unsaved |= gain.best_score || gain.worlds_cleared;
@@ -85,6 +95,16 @@ fn keep_records(
         return;
     }
     let Some(path) = saved.path.clone() else { return };
+    // Another copy of the game may have saved since this one started; fold that in
+    // first, so this save does not erase it. If the file cannot be read now, do not
+    // write over it either: try again at the next banner.
+    match settings::load_records(&path) {
+        Ok(on_disk) => saved.records.absorb(&on_disk),
+        Err(err) => {
+            warn!("could not read records from {}: {err}; will try saving again", path.display());
+            return;
+        }
+    }
     match settings::save_records(&path, &saved.records) {
         Ok(()) => saved.unsaved = false,
         Err(err) => warn!("could not save records to {}: {err}; will try again", path.display()),
@@ -103,7 +123,15 @@ mod tests {
     use crate::domain::records::Record;
     use crate::domain::rules::{Character, Match, PlayerConfig};
 
+    /// The match and its records, with `keep_records` running every frame.
     fn app_with(records: Records) -> App {
+        let mut app = match_app(records);
+        app.add_systems(Update, keep_records);
+        app
+    }
+
+    /// The match and its records, with no records systems yet.
+    fn match_app(records: Records) -> App {
         let config = PlayerConfig {
             label: "Lucía".into(),
             age: AgeLevel::Eight,
@@ -113,8 +141,7 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(Game(Match::new(vec![config], 5)))
             .insert_resource(PlayerNames(["Lucía".into(), String::new()]))
-            .insert_resource(SavedRecords::in_memory(records))
-            .add_systems(Update, keep_records);
+            .insert_resource(SavedRecords::in_memory(records));
         app
     }
 
@@ -139,11 +166,76 @@ mod tests {
         assert_eq!(app.world().resource::<BestBefore>().0, vec![800], "the snapshot stays for the whole match");
     }
 
-    #[test]
-    fn a_failed_save_is_tried_again_at_the_next_banner() {
-        let dir = std::env::temp_dir().join(format!("numhop-test-retry-{}", std::process::id()));
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("numhop-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn saving_keeps_what_another_copy_of_the_game_saved_meanwhile() {
+        let dir = temp_dir("two-copies");
+        let path = dir.join("records.toml");
+        let mut app = app_with(Records::default());
+        app.insert_resource(SavedRecords { records: Records::default(), path: Some(path.clone()), unsaved: false });
+        app.update();
+
+        // The other window saves Mateo's progress after this one loaded its records.
+        let mut theirs = Records::default();
+        theirs.merge("mateo", 640, 2);
+        settings::save_records(&path, &theirs).unwrap();
+
+        app.world_mut().resource_mut::<Game>().0.player_mut().world = 1;
+        app.update();
+        let on_disk = settings::load_records(&path).unwrap();
+        assert_eq!(on_disk.get("mateo"), Record { best_score: 640, worlds_cleared: 2 });
+        assert_eq!(on_disk.get("lucía").worlds_cleared, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unreadable_records_file_is_never_saved_over() {
+        // A folder where the file should be cannot be read as one.
+        let dir = temp_dir("unreadable");
+        let path = dir.join("records.toml");
+        std::fs::create_dir_all(&path).unwrap();
+        let saved = load_from(Some(path));
+        assert!(saved.path.is_none(), "this run must keep its progress in memory only");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_snapshot_lives_for_one_match_and_play_again_takes_a_new_one() {
+        use bevy::state::app::StatesPlugin;
+        let mut old = Records::default();
+        old.merge("lucía", 800, 0);
+        let mut app = match_app(old);
+        app.add_plugins(StatesPlugin).init_state::<Screen>();
+        lifecycle(&mut app);
+        let go = |app: &mut App, screen: Screen| {
+            app.world_mut().resource_mut::<NextState<Screen>>().set(screen);
+            app.update();
+        };
+        let best_before = |app: &App| app.world().get_resource::<BestBefore>().map(|b| b.0.clone());
+
+        go(&mut app, Screen::Banner);
+        assert_eq!(best_before(&app), Some(vec![800]));
+        app.world_mut().resource_mut::<Game>().0.player_mut().score = 1200;
+        go(&mut app, Screen::Running);
+        go(&mut app, Screen::Results);
+        assert_eq!(best_before(&app), Some(vec![800]), "the results judge against the start of the match");
+
+        // Play again: the new match is judged against the 1200 just saved.
+        go(&mut app, Screen::Banner);
+        assert_eq!(best_before(&app), Some(vec![1200]));
+        go(&mut app, Screen::Menu);
+        assert_eq!(best_before(&app), None, "leaving for the menu drops the snapshot");
+    }
+
+    #[test]
+    fn a_failed_save_is_tried_again_at_the_next_banner() {
+        let dir = temp_dir("retry");
         // A plain file where the folder should be makes the first save fail.
         let blocker = dir.join("numhop");
         std::fs::write(&blocker, "").unwrap();

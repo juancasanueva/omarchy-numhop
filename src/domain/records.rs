@@ -61,6 +61,16 @@ impl Records {
         improved
     }
 
+    /// Takes in another set of records, keeping the better value of each, so progress
+    /// saved meanwhile by another running copy of the game is not lost.
+    pub fn absorb(&mut self, other: &Records) {
+        for (key, theirs) in &other.0 {
+            let mine = self.0.entry(key.clone()).or_default();
+            mine.best_score = mine.best_score.max(theirs.best_score);
+            mine.worlds_cleared = mine.worlds_cleared.max(theirs.worlds_cleared);
+        }
+    }
+
     /// How many worlds this player may start from: the first, plus one for each world
     /// cleared, up to `total_worlds`.
     pub fn startable_worlds(&self, key: &str, total_worlds: usize) -> usize {
@@ -168,6 +178,20 @@ mod tests {
         assert_eq!(records.get("bo"), Record { best_score: 70, worlds_cleared: 0 });
         assert_eq!(records.get("bad\"key"), Record::default(), "a key with a quote is dropped");
         assert_eq!(Records::parse(""), Records::default());
+    }
+
+    #[test]
+    fn absorbing_keeps_the_better_of_both_sides() {
+        let mut mine = Records::default();
+        mine.merge("lucía", 900, 1);
+        mine.merge("ana", 50, 0);
+        let mut theirs = Records::default();
+        theirs.merge("lucía", 400, 3);
+        theirs.merge("mateo", 120, 2);
+        mine.absorb(&theirs);
+        assert_eq!(mine.get("lucía"), Record { best_score: 900, worlds_cleared: 3 });
+        assert_eq!(mine.get("mateo"), Record { best_score: 120, worlds_cleared: 2 });
+        assert_eq!(mine.get("ana"), Record { best_score: 50, worlds_cleared: 0 });
     }
 
     #[test]

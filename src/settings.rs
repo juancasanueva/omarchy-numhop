@@ -66,11 +66,13 @@ pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
 }
 
 /// Writes beside the target, then renames over it, so a crash never leaves half a file.
+/// The temporary name carries the process id, so two running copies of the game never
+/// write into the same temporary file.
 fn write_atomically(path: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension("toml.tmp");
+    let tmp = path.with_extension(format!("toml.{}.tmp", std::process::id()));
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
 }
@@ -144,7 +146,7 @@ mod tests {
         let settings = Settings { lang: Lang::Es, names: ["Lucía".into(), "Íñigo".into()], muted: true };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), Some(settings));
-        assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1, "temp file left behind");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -157,7 +159,7 @@ mod tests {
         records.merge("lucía", 1200, 2);
         save_records(&path, &records).unwrap();
         assert_eq!(load_records(&path).unwrap(), records);
-        assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
+        assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1, "temp file left behind");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

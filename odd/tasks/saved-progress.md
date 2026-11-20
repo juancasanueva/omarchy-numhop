@@ -14,8 +14,8 @@ worlds, kids replay the first ones over and over, and a great run leaves no trac
   `best_score` and `worlds_cleared`. Merging a match result reports what improved.
 - Saved in `$XDG_DATA_HOME/numhop/records.toml` (default `~/.local/share`), one TOML
   table per player, written atomically like settings.
-- Records update on every opened gate and when the results screen shows, so quitting
-  mid-match keeps the worlds already cleared.
+- Records merge every time a banner shows (after each gate, death and match start)
+  and when the results show, so quitting mid-match keeps the worlds already cleared.
 - `PlayerConfig.start_world`: a match starts each player at their chosen world.
 - Menu: a "Start world" row per player, cycling through the worlds they have reached;
   it re-clamps when the name changes.
@@ -68,3 +68,15 @@ worlds, kids replay the first ones over and over, and a great run leaves no trac
   menu helper returns (world, startable), results block reindented.
   bin/test 93 passed; clippy clean; mutating the retry or the overflow makes their
   tests fail.
+- Review review-d2d1370bfd0fb870 approved and acknowledged, with two warnings. The
+  user chose to fix them before merging (T8).
+- [x] T8 Two windows and the results wiring: before each save, the file on disk is
+  re-read and absorbed (better value per player wins), and a file that has become
+  unreadable is not written over (retried at the next banner); the temporary file name
+  carries the process id. "New best!" lines come from the pure `result_lines`, tested
+  for per-seat lookup (not ranking place) and no claim without a snapshot; the
+  BestBefore lifecycle (snapshot, kept through Results, renewed on play again, dropped
+  on Menu) is tested with real state transitions; load_from(unreadable) keeps no path.
+  Also renamed MenuChoices::effective_start_world, noted the start-world invariant,
+  and fixed the scope line. bin/test 99 passed; clippy clean; dropping the merge
+  before saving, or looking bests up by ranking place, makes their tests fail.

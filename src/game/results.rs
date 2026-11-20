@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use crate::domain::records::is_new_best;
 use crate::domain::rules::Match;
-use crate::i18n::fill;
+use crate::i18n::{Strings, fill};
 
 use super::assets::GameAssets;
 use super::banner::turn_banner;
@@ -48,24 +48,7 @@ fn show(
         .with_children(|c| {
             c.spawn(label(a, t.results, 24.0, ui::MUTED));
             c.spawn((label(a, headline, 46.0, ui::TEXT), AccentText));
-            for (place, &i) in ranking.iter().enumerate() {
-                let p = &m.players[i];
-                let mut line = fill(
-                    t.result_line,
-                    &[
-                        &t.ordinal(place),
-                        &p.config.label,
-                        &p.config.character.name(),
-                        &p.world.min(m.total_worlds),
-                        &m.total_worlds,
-                        &p.score,
-                        &p.gems,
-                    ],
-                );
-                let best_before = best_before.as_ref().and_then(|b| b.0.get(i).copied());
-                if is_new_best(p.score, best_before) {
-                    line = format!("{line}  ·  {}", t.new_best);
-                }
+            for line in result_lines(t, m, best_before.as_deref()) {
                 c.spawn(label(a, line, 22.0, ui::TEXT));
             }
             c.spawn(label(a, t.results_hint, 18.0, ui::MUTED));
@@ -74,6 +57,36 @@ fn show(
     commands
         .spawn((DespawnOnExit(Screen::Results), ui::fullscreen(ui::DIM, 50)))
         .add_child(card);
+}
+
+/// One line per player, best first, marking scores that beat that player's best from
+/// before the match.
+fn result_lines(t: &Strings, m: &Match, best_before: Option<&BestBefore>) -> Vec<String> {
+    m.ranking()
+        .into_iter()
+        .enumerate()
+        .map(|(place, seat)| {
+            let p = &m.players[seat];
+            let line = fill(
+                t.result_line,
+                &[
+                    &t.ordinal(place),
+                    &p.config.label,
+                    &p.config.character.name(),
+                    &p.world.min(m.total_worlds),
+                    &m.total_worlds,
+                    &p.score,
+                    &p.gems,
+                ],
+            );
+            // The snapshot is indexed by seat, not by place in the ranking.
+            if is_new_best(p.score, best_before.and_then(|b| b.0.get(seat).copied())) {
+                format!("{line}  ·  {}", t.new_best)
+            } else {
+                line
+            }
+        })
+        .collect()
 }
 
 fn choose(
@@ -96,5 +109,43 @@ fn choose(
         next.set(Screen::Banner);
     } else if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Escape]) {
         next.set(Screen::Menu);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::math::AgeLevel;
+    use crate::domain::rules::{Character, PlayerConfig};
+    use crate::i18n::Lang;
+
+    fn duo(scores: [u32; 2]) -> Match {
+        let config = |label: &str| PlayerConfig {
+            label: label.into(),
+            age: AgeLevel::Eight,
+            character: Character::Pip,
+            start_world: 0,
+        };
+        let mut m = Match::new(vec![config("Lucía"), config("Mateo")], 5);
+        m.players[0].score = scores[0];
+        m.players[1].score = scores[1];
+        m
+    }
+
+    #[test]
+    fn new_best_marks_follow_each_seat_not_the_ranking() {
+        let t = Lang::En.strings();
+        // Mateo (seat 2) wins and is listed first; only Lucía beat her old best.
+        let m = duo([300, 900]);
+        let lines = result_lines(t, &m, Some(&BestBefore(vec![200, 1000])));
+        assert!(lines[0].contains("Mateo") && !lines[0].contains(t.new_best), "{lines:?}");
+        assert!(lines[1].contains("Lucía") && lines[1].contains(t.new_best), "{lines:?}");
+    }
+
+    #[test]
+    fn no_snapshot_means_no_new_best_claims() {
+        let t = Lang::En.strings();
+        let lines = result_lines(t, &duo([300, 900]), None);
+        assert!(lines.iter().all(|l| !l.contains(t.new_best)), "{lines:?}");
     }
 }
