@@ -5,6 +5,8 @@
 
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
+use bevy::ui::UiSystems;
+use bevy::window::PrimaryWindow;
 
 use crate::domain::math::AgeLevel;
 use crate::domain::records::{Records, display_name};
@@ -176,15 +178,64 @@ struct MenuUi;
 #[derive(Component)]
 struct MenuHero(usize);
 
+/// The card that holds the menu rows; its laid-out size decides the menu's scale.
+#[derive(Component)]
+struct MenuCard;
+
+/// Space kept between the card and the top and bottom of the window, in UI pixels.
+const FIT_MARGIN_Y: f32 = 16.0;
+/// Space kept to the right of the card (the root's padding) and to its left.
+const FIT_MARGIN_X: f32 = 70.0 + 16.0;
+
 pub fn plugin(app: &mut App) {
     app.init_resource::<MenuChoices>()
         .add_systems(OnEnter(Screen::Menu), (enter, draw).chain())
+        .add_systems(OnExit(Screen::Menu), reset_scale)
         .add_systems(
             Update,
             (navigate, draw.run_if(menu_changed), spin_heroes)
                 .chain()
                 .run_if(in_state(Screen::Menu).and_then(no_overlay)),
-        );
+        )
+        .add_systems(PostUpdate, fit_to_window.after(UiSystems::Layout).run_if(in_state(Screen::Menu)));
+}
+
+/// The UI scale at which a card of `card` UI pixels, plus its margins, fits a window of
+/// `window` logical pixels. It never grows the menu past its natural size. `None` while
+/// either size is unknown, such as before the first layout or while minimized.
+fn fit_scale(card: Vec2, window: Vec2) -> Option<f32> {
+    if card.min_element() <= 0.0 || window.min_element() <= 0.0 {
+        return None;
+    }
+    let needed = card + Vec2::new(FIT_MARGIN_X, 2.0 * FIT_MARGIN_Y);
+    Some((window / needed).min_element().min(1.0))
+}
+
+/// Shrinks the whole UI while the menu is taller or wider than the window, such as with
+/// two players in a small window, and grows it back once there is room.
+fn fit_to_window(
+    card: Query<&ComputedNode, With<MenuCard>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mut scale: ResMut<UiScale>,
+) {
+    let (Ok(card), Ok(window)) = (card.single(), window.single()) else {
+        return;
+    };
+    // Physical size times the inverse scale factor (window scale × UiScale) gives the
+    // card's natural size, which does not change as the scale does.
+    let natural = card.size() * card.inverse_scale_factor();
+    let Some(fit) = fit_scale(natural, Vec2::new(window.width(), window.height())) else {
+        return;
+    };
+    // Text lays out a pixel differently at each scale; ignore that jitter.
+    if (scale.0 - fit).abs() > 0.005 {
+        scale.0 = fit;
+    }
+}
+
+/// The game's other screens keep their natural size.
+fn reset_scale(mut scale: ResMut<UiScale>) {
+    scale.0 = 1.0;
 }
 
 /// The menu redraws when a choice, the language, a name, or the sound switch changes.
@@ -277,6 +328,7 @@ fn draw(
             BackgroundColor(ui::PANEL),
             BorderColor::all(ui::TEXT),
             AccentBorder,
+            MenuCard,
         ))
         .with_children(|c| {
             c.spawn((label(a, "numhop", 64.0, ui::TEXT), AccentText));
@@ -778,6 +830,29 @@ mod tests {
         assert_eq!(seen, [1, 2, 0], "two worlds cleared offers worlds 1 to 3, then wraps");
         tap(&mut app, KeyCode::ArrowLeft);
         assert_eq!(start_world(&app, 0), 2);
+    }
+
+    #[test]
+    fn a_menu_that_fits_keeps_its_natural_size() {
+        assert_eq!(fit_scale(Vec2::new(600.0, 700.0), Vec2::new(1920.0, 1080.0)), Some(1.0));
+    }
+
+    #[test]
+    fn a_menu_taller_than_the_window_shrinks_to_fit_with_its_margins() {
+        let scale = fit_scale(Vec2::new(600.0, 1000.0), Vec2::new(1280.0, 700.0)).unwrap();
+        assert!((scale * (1000.0 + 2.0 * FIT_MARGIN_Y) - 700.0).abs() < 0.01, "got {scale}");
+    }
+
+    #[test]
+    fn a_menu_wider_than_the_window_shrinks_to_fit_too() {
+        let scale = fit_scale(Vec2::new(600.0, 300.0), Vec2::new(500.0, 1080.0)).unwrap();
+        assert!((scale * (600.0 + FIT_MARGIN_X) - 500.0).abs() < 0.01, "got {scale}");
+    }
+
+    #[test]
+    fn no_scale_is_chosen_before_layout_or_while_minimized() {
+        assert_eq!(fit_scale(Vec2::ZERO, Vec2::new(1280.0, 700.0)), None);
+        assert_eq!(fit_scale(Vec2::new(600.0, 1000.0), Vec2::ZERO), None);
     }
 
     #[test]
