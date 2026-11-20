@@ -19,6 +19,9 @@ enum Step {
     Wait(f32),
     Tap(KeyCode),
     Hold(KeyCode, f32),
+    /// Press a key and keep it down until `Release`, so shots can happen mid-move.
+    Press(KeyCode),
+    Release(KeyCode),
     Shot(&'static str),
     /// Put the player right under the first crystal and jump into it.
     JumpIntoCrystal,
@@ -71,8 +74,17 @@ pub fn plugin(app: &mut App) {
         Wait(1.5),
         Shot("03-banner"),
         Tap(KeyCode::Space),
-        Hold(KeyCode::ArrowRight, 1.4),
+        // Jump early, before the first crystal overhead, then walk on.
+        Press(KeyCode::ArrowRight),
+        Wait(0.2),
+        Press(KeyCode::Space),
+        Wait(0.2),
+        Shot("04b-jumping"),
+        Release(KeyCode::Space),
         Wait(0.6),
+        Shot("04a-walking"),
+        Release(KeyCode::ArrowRight),
+        Wait(0.8),
         Shot("04-running"),
         JumpIntoCrystal,
         Wait(1.2),
@@ -159,6 +171,8 @@ fn drive(
                 script.held = None;
             }
         }
+        Step::Press(k) => keys.press(k),
+        Step::Release(k) => keys.release(k),
         Step::Shot(name) => {
             let path = script.dir.join(format!("{name}.png"));
             commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path));

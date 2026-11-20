@@ -11,7 +11,9 @@ The game design (turn-based sibling play, age-tiered topics, a 30-second clock)
 is inspired by [pgarevalo/mariomath](https://github.com/pgarevalo/mariomath).
 Everything here is original: the code, the characters (Pip the fox, Bolt the
 robot, and the Grumbles), and the 3D models, which are built procedurally in
-Blender from `assets-src/build_models.py`.
+Blender from `assets-src/build_models.py`. The same script rigs the characters
+with a small skeleton and keys their `walk`, `idle`, and `jump` clips; the game
+blends between them as they move, and speeds the walk up as they run.
 
 ## How it plays
 

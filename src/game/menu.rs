@@ -9,6 +9,7 @@ use crate::domain::math::AgeLevel;
 use crate::domain::rules::{Character, Match, PlayerConfig};
 use crate::i18n::fill;
 
+use super::animation::{Animated, Rig};
 use super::assets::GameAssets;
 use super::banner::turn_banner;
 use super::level::{LevelEntity, MainCamera, PendingBuild, facing_rotation, hero_model};
@@ -174,6 +175,7 @@ fn draw(
     for (i, x) in positions.iter().enumerate() {
         commands.spawn((
             MenuHero(i),
+            Animated::new(Rig::hero(choices.configs[i].character)),
             DespawnOnExit(Screen::Menu),
             WorldAssetRoot(hero_model(a, choices.configs[i].character)),
             Transform::from_xyz(*x, 0.0, 1.0).with_scale(Vec3::splat(1.6)).with_rotation(facing_rotation(1.0)),

@@ -13,6 +13,7 @@ use crate::domain::rules::Match;
 use crate::i18n::{Lang, Strings};
 use crate::settings::{self, Settings};
 
+mod animation;
 mod assets;
 mod banner;
 mod capture;
@@ -113,6 +114,7 @@ pub fn run() -> AppExit {
         .add_systems(Update, save_language.run_if(resource_changed::<Language>))
         .add_plugins((
             assets::plugin,
+            animation::plugin,
             theme::plugin,
             overlay::plugin,
             menu::plugin,

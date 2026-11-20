@@ -15,6 +15,7 @@ use crate::domain::levels::{Cell, Decor, Level, Tile};
 use crate::domain::rng::Rng;
 use crate::domain::rules::Character;
 
+use super::animation::{Animated, Rig};
 use super::assets::GameAssets;
 use super::{Game, Worlds};
 
@@ -330,6 +331,7 @@ fn spawn_level(
             ))
             .with_child((
                 EnemyModel,
+                Animated::new(Rig::Grumble),
                 WorldAssetRoot(assets.enemy.clone()),
                 Transform::from_rotation(facing_rotation(-1.0)).with_scale(Vec3::splat(1.1)),
             ));
@@ -388,6 +390,7 @@ fn spawn_level(
         ))
         .with_child((
             PlayerModel,
+            Animated::new(Rig::hero(character)),
             WorldAssetRoot(hero_model(assets, character)),
             Transform::from_rotation(facing_rotation(1.0)).with_scale(Vec3::splat(super::play::HERO_SCALE)),
         ));

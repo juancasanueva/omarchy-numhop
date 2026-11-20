@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 
+use super::animation::{Animated, Motion, walk_speed};
 use super::banner::after_death;
 use super::hud::Toast;
 use super::level::{
@@ -184,12 +185,22 @@ fn enemy_ai(
     grid: Res<Grid>,
     player: Query<&Transform, With<Player>>,
     mut enemies: Query<(Entity, &mut Transform, &mut Body, &mut Enemy, &Children), Without<Player>>,
-    mut models: Query<&mut Transform, (With<EnemyModel>, Without<Player>, Without<Enemy>)>,
+    mut models: Query<(&mut Transform, &mut Animated), (With<EnemyModel>, Without<Player>, Without<Enemy>)>,
     mut commands: Commands,
 ) {
     let dt = time.delta_secs().min(1.0 / 30.0);
     let px = player.single().map(|t| t.translation.x).unwrap_or(0.0);
     for (entity, mut tf, mut body, mut enemy, children) in &mut enemies {
+        let squashed = enemy.squashed.is_some();
+        let awake = !squashed && (tf.translation.x - px).abs() <= ENEMY_WAKE_DISTANCE;
+        for child in children.iter() {
+            if let Ok((mut m, mut animated)) = models.get_mut(child) {
+                m.rotation = facing_rotation(enemy.dir);
+                animated.motion = if awake { Motion::Walk } else { Motion::Idle };
+                // A stomped Grumble freezes mid-pose while it flattens.
+                animated.speed = if squashed { 0.0 } else { 1.0 };
+            }
+        }
         if let Some(t) = enemy.squashed.as_mut() {
             *t -= dt;
             tf.scale = Vec3::new(1.3, 0.25, 1.3);
@@ -198,7 +209,7 @@ fn enemy_ai(
             }
             continue;
         }
-        if (tf.translation.x - px).abs() > ENEMY_WAKE_DISTANCE {
+        if !awake {
             continue;
         }
         body.vel.x = enemy.dir * ENEMY_SPEED;
@@ -212,11 +223,6 @@ fn enemy_ai(
         let below = (pos.y - 0.1).floor() as i32;
         if contacts.wall || (body.on_ground && !grid.solid(ahead, below)) {
             enemy.dir = -enemy.dir;
-        }
-        for child in children.iter() {
-            if let Ok(mut m) = models.get_mut(child) {
-                m.rotation = facing_rotation(enemy.dir);
-            }
         }
         if pos.y < PIT_DEPTH {
             commands.entity(entity).despawn();
@@ -301,7 +307,11 @@ fn animate(
     mut drifting: Query<(&mut Transform, &Drift), (Without<Spin>, Without<Bob>, Without<PlayerModel>)>,
     mut bumps: Query<(Entity, &mut Transform, &mut Bump), (Without<Spin>, Without<Bob>, Without<Drift>, Without<PlayerModel>)>,
     mut players: Query<(&mut Player, &Body, &Children)>,
-    mut models: Query<&mut Transform, (With<PlayerModel>, Without<Spin>, Without<Bob>, Without<Drift>, Without<Bump>)>,
+    mut models: Query<
+        (&mut Transform, Option<&mut Animated>),
+        (With<PlayerModel>, Without<Spin>, Without<Bob>, Without<Drift>, Without<Bump>),
+    >,
+    screen: Res<State<Screen>>,
     mut commands: Commands,
 ) {
     let dt = time.delta_secs();
@@ -327,16 +337,30 @@ fn animate(
             commands.entity(entity).remove::<Bump>();
         }
     }
+    // Outside of play (a question, a banner) the hero stands still.
+    let running = *screen.get() == Screen::Running;
     for (mut p, body, children) in &mut players {
         p.squash = move_toward(p.squash, 0.0, dt * 1.6);
-        let run = if body.on_ground && body.vel.x.abs() > 0.5 { (t * 18.0).sin().abs() * 0.06 } else { 0.0 };
+        let (motion, speed) = if !running {
+            (Motion::Idle, 1.0)
+        } else if !body.on_ground {
+            (Motion::Jump, 1.0)
+        } else if body.vel.x.abs() > 0.4 {
+            (Motion::Walk, walk_speed(body.vel.x, RUN_SPEED))
+        } else {
+            (Motion::Idle, 1.0)
+        };
         for child in children.iter() {
-            if let Ok(mut m) = models.get_mut(child) {
+            if let Ok((mut m, animated)) = models.get_mut(child) {
                 let target = facing_rotation(p.facing);
                 m.rotation = m.rotation.slerp(target, (dt * 14.0).min(1.0));
+                // The clips animate the body; landing still squashes the whole model.
                 let s = p.squash;
                 m.scale = Vec3::new(1.0 + s * 0.5, 1.0 - s, 1.0 + s * 0.5) * HERO_SCALE;
-                m.translation.y = run;
+                if let Some(mut animated) = animated {
+                    animated.motion = motion;
+                    animated.speed = speed;
+                }
             }
         }
     }

@@ -1,9 +1,12 @@
 //! Loads every model and font up front, and reports a missing file in the window
 //! instead of starting a game with invisible pieces.
 
+#![allow(clippy::too_many_arguments)]
+
 use bevy::asset::LoadState;
 use bevy::prelude::*;
 
+use super::animation::{CharacterClips, ClipsMissing};
 use super::{Language, Screen};
 use crate::i18n::fill;
 
@@ -25,6 +28,10 @@ pub struct GameAssets {
     pub tree: Handle<WorldAsset>,
     pub bush: Handle<WorldAsset>,
     pub cloud: Handle<WorldAsset>,
+    /// The animated characters' whole files, for their named clips.
+    pub gltf_pip: Handle<Gltf>,
+    pub gltf_bolt: Handle<Gltf>,
+    pub gltf_grumble: Handle<Gltf>,
 }
 
 impl GameAssets {
@@ -78,6 +85,9 @@ fn load(mut commands: Commands, server: Res<AssetServer>, language: Res<Language
         tree: model(&server, "tree"),
         bush: model(&server, "bush"),
         cloud: model(&server, "cloud"),
+        gltf_pip: server.load("models/hero_pip.glb"),
+        gltf_bolt: server.load("models/hero_bolt.glb"),
+        gltf_grumble: server.load("models/enemy_grumble.glb"),
     };
     commands.insert_resource(assets);
     commands.spawn((
@@ -101,8 +111,13 @@ fn wait_for_assets(
     texts: Query<&Children, With<LoadingText>>,
     mut writer: Query<&mut Text>,
     language: Res<Language>,
+    clips: Option<Res<CharacterClips>>,
+    clips_missing: Option<Res<ClipsMissing>>,
 ) {
     let mut failed = Vec::new();
+    if clips_missing.is_some() {
+        failed.push("character animations");
+    }
     let mut pending = 0;
     let fonts = [("NotoSans-Bold.ttf", assets.font.id().untyped()), ("NotoSansSymbols2-Regular.ttf", assets.symbols.id().untyped())];
     let models = assets.all_models().map(|(n, h)| (n, h.id().untyped()));
@@ -124,7 +139,8 @@ fn wait_for_assets(
         }
         return;
     }
-    if pending == 0 {
+    // The menu shows animated heroes, so it waits for their clips too.
+    if pending == 0 && clips.is_some() {
         next.set(Screen::Menu);
     }
 }
