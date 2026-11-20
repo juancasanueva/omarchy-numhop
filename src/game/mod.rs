@@ -132,6 +132,20 @@ pub fn run() -> AppExit {
                 .set(AssetPlugin {
                     file_path: asset_dir().to_string_lossy().into_owned(),
                     ..default()
+                })
+                // No bindless materials. With texture binding arrays, Bevy keeps every
+                // material in one shared table that shaders index into; on Intel Iris
+                // Plus (Ice Lake, Mesa 26.2) those lookups go wrong some frames, so
+                // blocks and clouds vanish and the ground loses its texture. Hiding
+                // the feature makes Bevy bind each material on its own, which is
+                // plenty fast for scenes this size.
+                .set(bevy::render::RenderPlugin {
+                    render_creation: bevy::render::settings::WgpuSettings {
+                        disabled_features: Some(bevy::render::settings::WgpuFeatures::TEXTURE_BINDING_ARRAY),
+                        ..default()
+                    }
+                    .into(),
+                    ..default()
                 }),
         )
         .init_state::<Screen>()
