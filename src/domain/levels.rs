@@ -161,6 +161,28 @@ pub fn worlds() -> Vec<Level> {
             },
         )
         .expect("frost map is valid"),
+        Level::parse(
+            "Golden Dunes",
+            DUNES,
+            Palette {
+                sky: [0.95, 0.78, 0.52],
+                fog: [0.98, 0.88, 0.70],
+                sun: [1.0, 0.92, 0.75],
+                sun_lux: 14_000.0,
+            },
+        )
+        .expect("dunes map is valid"),
+        Level::parse(
+            "Starry Night",
+            NIGHT,
+            Palette {
+                sky: [0.08, 0.10, 0.25],
+                fog: [0.18, 0.20, 0.38],
+                sun: [0.70, 0.78, 1.0],
+                sun_lux: 5_000.0,
+            },
+        )
+        .expect("night map is valid"),
     ]
 }
 
@@ -197,6 +219,28 @@ const FROST: &[&str] = &[
     "================  ================   ===============   ===============  ================   =============   =============  ==================",
     "================  ================   ===============   ===============  ================   =============   =============  ==================",
 ];
+const DUNES: &[&str] = &[
+    "",
+    "",
+    "                     *                                     *                               ***                           **",
+    "               **               *              **              *               *               **              *               *",
+    "        C           BCB                C                  CBC            C                BCBCB           C             CBBC             BB",
+    "                         B   B                       BB                               B  B                           BB                 BBB  K",
+    "  P  t    e        b  e    e        e    t  F      e    e          e   e   b        e   e           F   e          e   e   b       e   BBBB      G  t",
+    "===============  ==============   =============  =============   =============   ==============  =============   =============   =====================",
+    "===============  ==============   =============  =============   =============   ==============  =============   =============   =====================",
+];
+const NIGHT: &[&str] = &[
+    "",
+    "",
+    "                   *                    *                                       *               *                          **",
+    "               *              *             **             *              *             *            **             *             *           **",
+    "       C          BCB                  CBC          C             C            BCB             CBC          C             CBBC                      BB",
+    "                      B             BB            B            BBB                         B  B                        BB            B             BBB  K",
+    "  P   b   e         e   e         t   e  e      F   e  e         e   e        b  e  e        e   e        F   e          e   e         e  e       BBBB      G  t",
+    "==============   ============   ============  ============   ============   ===========   ===========  ============   ===========   ==========  ================",
+    "==============   ============   ============  ============   ============   ===========   ===========  ============   ===========   ==========  ================",
+];
 
 #[cfg(test)]
 mod tests {
@@ -205,7 +249,7 @@ mod tests {
     #[test]
     fn worlds_parse() {
         let worlds = worlds();
-        assert_eq!(worlds.len(), 3);
+        assert_eq!(worlds.len(), 5);
         for w in &worlds {
             assert!(w.crystals().len() >= 5, "{} has few crystals", w.name);
             assert!(!w.checkpoints.is_empty());
@@ -222,6 +266,22 @@ mod tests {
                 let below = Cell { col: s.col, row: s.row - 1 };
                 assert!(w.solid_at(below).is_some(), "{}: nothing under {:?}", w.name, s);
                 assert!(w.solid_at(s).is_none(), "{}: {:?} is inside a block", w.name, s);
+            }
+        }
+    }
+
+    #[test]
+    fn gaps_are_jumpable() {
+        // A jump carries about 5 tiles across; 3-tile gaps leave room for a late takeoff.
+        for w in worlds() {
+            let mut gap = 0;
+            for col in 0..w.width {
+                if w.solid_at(Cell { col, row: 0 }).is_some() {
+                    assert!(gap <= 3, "{}: a {gap}-tile gap ends at column {col}", w.name);
+                    gap = 0;
+                } else {
+                    gap += 1;
+                }
             }
         }
     }
