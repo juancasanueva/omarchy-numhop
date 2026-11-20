@@ -1,6 +1,6 @@
 # Builds numhop from the checkout this folder lives in.
 pkgname=numhop
-pkgver=0.1.0
+pkgver=1.0.0
 pkgrel=1
 pkgdesc="A 3D math platformer: hop, jump, and solve"
 arch=('x86_64')
