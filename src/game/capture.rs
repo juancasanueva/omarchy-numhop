@@ -47,6 +47,41 @@ struct Script {
 pub fn plugin(app: &mut App) {
     let Some(dir) = std::env::var_os("NUMHOP_CAPTURE").map(PathBuf::from) else { return };
     let _ = std::fs::create_dir_all(&dir);
+    let scenario = std::env::var("NUMHOP_CAPTURE_SCENARIO").unwrap_or_default();
+    let steps = if scenario == "quit-to-menu" { quit_to_menu() } else { full_tour() };
+    app.insert_resource(Script {
+        dir,
+        steps,
+        index: 0,
+        timer: 0.0,
+        held: None,
+        tapped: None,
+    })
+    .add_systems(PreUpdate, drive.after(InputSystems).run_if(not(in_state(Screen::Loading))));
+}
+
+/// Start a match, ask to quit, then choose the main menu instead.
+fn quit_to_menu() -> Vec<Step> {
+    use Step::*;
+    vec![
+        Wait(2.0),
+        Tap(KeyCode::Space),
+        Wait(1.0),
+        Tap(KeyCode::Space),
+        Wait(0.8),
+        Tap(KeyCode::KeyQ),
+        Wait(0.6),
+        Shot("01-confirm-quit"),
+        Tap(KeyCode::KeyM),
+        Wait(1.2),
+        Shot("02-after-m"),
+        Wait(0.6),
+        Quit,
+    ]
+}
+
+/// Every screen, from the menu to the results.
+fn full_tour() -> Vec<Step> {
     use Step::*;
     let mut steps = vec![
         Wait(2.5),
@@ -126,15 +161,7 @@ pub fn plugin(app: &mut App) {
         Wait(0.8),
         Quit,
     ]);
-    app.insert_resource(Script {
-        dir,
-        steps,
-        index: 0,
-        timer: 0.0,
-        held: None,
-        tapped: None,
-    })
-    .add_systems(PreUpdate, drive.after(InputSystems).run_if(not(in_state(Screen::Loading))));
+    steps
 }
 
 fn drive(

@@ -38,7 +38,6 @@ fn toggle(
     mut overlay: ResMut<Overlay>,
     mut time: ResMut<Time<Virtual>>,
     mut exit: MessageWriter<AppExit>,
-    mut commands: Commands,
     mut next: ResMut<NextState<Screen>>,
 ) {
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
@@ -67,7 +66,8 @@ fn toggle(
             if keys.any_just_pressed([KeyCode::KeyY, KeyCode::KeyS, KeyCode::KeyQ]) {
                 exit.write(AppExit::Success);
             } else if keys.just_pressed(KeyCode::KeyM) {
-                commands.remove_resource::<Game>();
+                // Only switch screens here. Gameplay systems still running this frame
+                // need the match; the menu drops it when it opens.
                 next.set(Screen::Menu);
                 wanted = Overlay::None;
             } else if keys.just_pressed(KeyCode::KeyN) || keys.just_pressed(KeyCode::Escape) {
