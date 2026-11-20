@@ -8,12 +8,15 @@
 //! ["lucía"]
 //! best_score = 2140
 //! worlds_cleared = 3
+//! practice.times_tables = "2 4 0"
 //! ```
+//!
+//! A practice line holds the topic's tier, recent misses and right answers in a row.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::math::{Question, Topic};
-use super::practice::{Practice, RetryQueue, Skill, record_answer};
+use super::practice::{self, Practice, RetryQueue, Skill};
 use super::rules::clean_name;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -88,12 +91,22 @@ impl Records {
     }
 
     /// Records this player's answer and remembers the topic as answered in this run.
+    /// This is the only way practice changes, so `absorb` always knows what this run did.
     pub fn record_answer(&mut self, key: &str, retries: &mut RetryQueue, question: &Question, right: bool, was_retry: bool) {
-        record_answer(self.practice_mut(key), retries, question, right, was_retry);
+        practice::record_answer(self.practice_mut(key), retries, question, right, was_retry);
         self.answered.insert((key.to_string(), question.topic));
     }
 
-    pub fn practice_mut(&mut self, key: &str) -> &mut Practice {
+    /// Called once these records are on disk: what this run answered is saved, so from
+    /// now on a newer copy saved by another window wins for those topics too, until
+    /// this run answers them again.
+    pub fn forget_answered(&mut self) {
+        self.answered.clear();
+    }
+
+    /// Private on purpose: a change made here is not remembered as answered in this
+    /// run, so `absorb` would let another copy overwrite it. Use `record_answer`.
+    fn practice_mut(&mut self, key: &str) -> &mut Practice {
         self.practice.entry(key.to_string()).or_default()
     }
 
@@ -191,7 +204,7 @@ impl Records {
 
     pub fn render(&self) -> String {
         let mut out = String::from("# numhop records\n");
-        let keys: std::collections::BTreeSet<&String> = self.players.keys().chain(self.practice.keys()).collect();
+        let keys: BTreeSet<&String> = self.players.keys().chain(self.practice.keys()).collect();
         for key in keys {
             out.push_str(&format!("\n[\"{key}\"]\n"));
             if let Some(record) = self.players.get(key) {
@@ -350,6 +363,21 @@ mod tests {
         assert_eq!(practice.tier(Topic::Division, 1), 4, "only loaded here, so the newer copy wins");
         assert_eq!(practice.tier(Topic::FractionOf, 1), 1, "answered here, so this run's view wins");
         assert_eq!(practice.tier(Topic::Decimals, 1), 3, "new to this run, taken from the other copy");
+    }
+
+    #[test]
+    fn after_a_save_another_windows_newer_practice_wins_again() {
+        use crate::domain::math::generate_topic;
+        use crate::domain::rng::Rng;
+        let question = generate_topic(Topic::Gcd, 2, &mut Rng::new(8));
+        let mut mine = Records::default();
+        mine.record_answer("ana", &mut RetryQueue::default(), &question, false, false);
+        mine.forget_answered();
+        // Another window practised GCD more after this one saved.
+        let mut theirs = Records::default();
+        theirs.practice_mut("ana").answered(Topic::Gcd, 4, true);
+        mine.absorb(&theirs);
+        assert_eq!(mine.practice("ana").tier(Topic::Gcd, 1), 4);
     }
 
     #[test]

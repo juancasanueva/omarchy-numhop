@@ -74,3 +74,14 @@ is. A child who keeps failing borrowing sees it no more often than anything else
   at the next banner, header-only and repeated-header parsing; parse has one arm per
   field. bin/test 123 passed; clippy clean; the full tour reaches the results;
   reverting the merge rule or removing the once-guard makes their tests fail.
+- Review review-ef21b0fe3cc7ecfb approved and acknowledged after merge; follow-up (T6)
+  on the user's request.
+- [x] T6 Follow-up: practice_mut is private (record_answer is the only way practice
+  changes, so absorb always knows what this run did); answered topics are forgotten
+  after each successful save, so another window's newer practice wins again until
+  this run answers that topic again; calls the domain function as
+  practice::record_answer; BTreeSet imported once; module doc shows a practice line;
+  the menu-reset test goes through the module's plugin. bin/test 124 passed; clippy
+  clean; dropping the reset registration from the plugin makes its test fail.
+  Not done: an app-level test that `open` serves a retry to the right seat (the domain
+  function is covered).

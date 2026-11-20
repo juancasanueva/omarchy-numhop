@@ -646,11 +646,12 @@ mod tests {
 
     #[test]
     fn retries_are_dropped_on_the_menu() {
+        // Through the module's own plugin, so a lost or misplaced registration fails too.
         let mut app = App::new();
         app.add_plugins(StatesPlugin)
             .init_state::<Screen>()
-            .init_resource::<Retries>()
-            .add_systems(OnEnter(Screen::Menu), reset_retries);
+            .init_resource::<crate::game::overlay::Overlay>();
+        plugin(&mut app);
         app.world_mut().resource_mut::<Retries>().0[0].push(asking(false).question);
         app.world_mut().resource_mut::<NextState<Screen>>().set(Screen::Menu);
         app.update();

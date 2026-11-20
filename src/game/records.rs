@@ -116,7 +116,10 @@ fn keep_records(
         }
     }
     match settings::save_records(&path, &saved.records) {
-        Ok(()) => saved.unsaved = false,
+        Ok(()) => {
+            saved.unsaved = false;
+            saved.records.forget_answered();
+        }
         Err(err) => warn!("could not save records to {}: {err}; will try again", path.display()),
     }
 }
