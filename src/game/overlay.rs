@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use super::assets::GameAssets;
 use super::theme::{AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
-use super::{Game, Screen};
+use super::{Game, Language, Screen};
 
 #[derive(Resource, Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overlay {
@@ -30,16 +30,6 @@ pub fn plugin(app: &mut App) {
 pub fn no_overlay(overlay: Res<Overlay>) -> bool {
     *overlay == Overlay::None
 }
-
-const SHORTCUTS: &[(&str, &str)] = &[
-    ("Left / Right or A / D", "Move"),
-    ("Space, Up or W", "Jump"),
-    ("1 2 3 4", "Pick an answer"),
-    ("Arrow keys + Enter", "Choose an answer"),
-    ("Enter / Space", "Continue"),
-    ("?", "Show or hide this help"),
-    ("Q", "Quit"),
-];
 
 fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
@@ -74,7 +64,7 @@ fn toggle(
             }
         }
         Overlay::ConfirmQuit => {
-            if keys.just_pressed(KeyCode::KeyY) || keys.just_pressed(KeyCode::KeyQ) {
+            if keys.any_just_pressed([KeyCode::KeyY, KeyCode::KeyS, KeyCode::KeyQ]) {
                 exit.write(AppExit::Success);
             } else if keys.just_pressed(KeyCode::KeyM) {
                 commands.remove_resource::<Game>();
@@ -101,7 +91,9 @@ fn redraw(
     roots: Query<Entity, With<OverlayRoot>>,
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
+    language: Res<Language>,
 ) {
+    let t = language.t();
     for e in &roots {
         commands.entity(e).despawn();
     }
@@ -109,7 +101,8 @@ fn redraw(
     match *overlay {
         Overlay::None => {}
         Overlay::Help => {
-            let rows: Vec<Entity> = SHORTCUTS
+            let rows: Vec<Entity> = t
+                .shortcuts
                 .iter()
                 .map(|(keys, what)| {
                     commands
@@ -130,9 +123,9 @@ fn redraw(
                 .collect();
             let card = commands
                 .spawn((ui::card(rounding.0), BackgroundColor(ui::PANEL_SOLID), BorderColor::all(ui::TEXT), AccentBorder))
-                .with_child(label(a, "Shortcuts", 32.0, ui::TEXT))
+                .with_child(label(a, t.shortcuts_title, 32.0, ui::TEXT))
                 .add_children(&rows)
-                .with_child(label(a, "Press ? or Esc to close", 18.0, ui::MUTED))
+                .with_child(label(a, t.close_help, 18.0, ui::MUTED))
                 .id();
             commands.spawn((OverlayRoot, ui::fullscreen(ui::DIM, 100))).add_child(card);
         }
@@ -140,9 +133,9 @@ fn redraw(
             let card = commands
                 .spawn((ui::card(rounding.0), BackgroundColor(ui::PANEL_SOLID), BorderColor::all(ui::TEXT), AccentBorder))
                 .with_children(|c| {
-                    c.spawn(label(a, "Quit the game?", 34.0, ui::TEXT));
-                    c.spawn(label(a, "The current match will be lost.", 20.0, ui::MUTED));
-                    c.spawn((label(a, "Y  quit     M  main menu     N  keep playing", 22.0, ui::TEXT), AccentText));
+                    c.spawn(label(a, t.quit_title, 34.0, ui::TEXT));
+                    c.spawn(label(a, t.quit_lost, 20.0, ui::MUTED));
+                    c.spawn((label(a, t.quit_keys, 22.0, ui::TEXT), AccentText));
                 })
                 .id();
             commands.spawn((OverlayRoot, ui::fullscreen(ui::DIM, 100))).add_child(card);

@@ -47,10 +47,23 @@ After every answer, the game shows the worked solution.
 The game follows the Omarchy theme accent live, and its panels use your
 Hyprland window rounding.
 
+## Language
+
+numhop speaks English and Spanish (Español). Pick one under **Settings** in the
+main menu; the menu switches at once and the choice is saved to
+`~/.config/numhop/settings.toml`. On first run it follows Omarchy's language
+(`~/.config/omarchy/language`), then your system locale, then English.
+`NUMHOP_LANG=es numhop` picks a language for one run without saving it.
+
+The Spanish version uses the school notation kids see in class: MCD and mcm, and
+D/U (decenas/unidades) over the columns. Every string lives in `src/i18n/`, one
+file per language; adding a language means adding one file, and the compiler
+points at anything left untranslated.
+
 ## Build and install
 
 ```bash
-bin/test         # unit tests: math generators, match rules, level maps, theme parsing
+bin/test         # unit tests: math, match rules, level maps, translations, settings, theme
 bin/build        # optimized binary in build/numhop
 bin/install      # builds the Arch package and installs it into the app launcher
 bin/screenshots  # plays a scripted session and saves a screenshot of each screen
@@ -63,6 +76,8 @@ It needs Rust (`cargo`) and a Vulkan driver, both of which Omarchy ships with.
 ```text
 src/domain/   pure rules, no engine: math questions, match rules, level maps, RNG
 src/game/     Bevy adapter: level building, physics, questions, HUD, menus, theme
+src/i18n/     every visible string, in English (en.rs) and Spanish (es.rs)
+src/settings.rs  saved player settings
 assets/       glTF models (from Blender) and the Noto fonts
 assets-src/   the Blender file and the script that builds every model
 pkgbuild/     PKGBUILD, desktop entry, and icon

@@ -11,6 +11,7 @@ use bevy::ui_widgets::{Activate, Button, observe};
 
 use crate::domain::math::{self, Prompt, Question};
 use crate::domain::rules::{GEMS_PER_CRYSTAL, QUESTION_SECONDS, SCORE_CRYSTAL};
+use crate::i18n::{self, Strings};
 
 use super::assets::GameAssets;
 use super::banner::{after_death, after_gate};
@@ -19,7 +20,7 @@ use super::level::{CrystalBlock, Grid, LevelEntity, cell_center};
 use super::overlay::no_overlay;
 use super::theme::{Accent, AccentBackground, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label, symbol_font};
-use super::{Game, GameRng, Screen, Worlds};
+use super::{Game, GameRng, Language, Screen, Worlds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AskKind {
@@ -87,12 +88,13 @@ fn open(
     mut rng: ResMut<GameRng>,
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
+    language: Res<Language>,
 ) {
     let tier = game.0.tier(request.ratio);
     let age = game.0.player().config.age;
     let question = math::generate(age, tier, &mut rng.0);
     debug_assert!(math::validate(&question).is_ok());
-    spawn_overlay(&mut commands, &assets, &question, request.kind, rounding.0, &game);
+    spawn_overlay(&mut commands, &assets, language.t(), &question, request.kind, rounding.0, &game);
     commands.insert_resource(Asking {
         kind: request.kind,
         question,
@@ -103,10 +105,18 @@ fn open(
     });
 }
 
-fn spawn_overlay(commands: &mut Commands, a: &GameAssets, q: &Question, kind: AskKind, radius: f32, game: &Game) {
+fn spawn_overlay(
+    commands: &mut Commands,
+    a: &GameAssets,
+    t: &Strings,
+    q: &Question,
+    kind: AskKind,
+    radius: f32,
+    game: &Game,
+) {
     let heading = match kind {
-        AskKind::Crystal { .. } => "Crystal question",
-        AskKind::Gate => "Gate key question",
+        AskKind::Crystal { .. } => t.crystal_question,
+        AskKind::Gate => t.gate_question,
     };
     let who = format!("{} · {}", game.0.player().config.label, game.0.player().config.character.name());
 
@@ -141,7 +151,7 @@ fn spawn_overlay(commands: &mut Commands, a: &GameAssets, q: &Question, kind: As
             })
             .with_children(|c| {
                 c.spawn((label(a, heading, 26.0, ui::TEXT), AccentText));
-                c.spawn(label(a, format!("{who} · {}", q.topic.label()), 18.0, ui::MUTED));
+                c.spawn(label(a, format!("{who} · {}", t.topic(q.topic)), 18.0, ui::MUTED));
             });
             h.spawn(Node {
                 flex_direction: FlexDirection::Column,
@@ -178,7 +188,7 @@ fn spawn_overlay(commands: &mut Commands, a: &GameAssets, q: &Question, kind: As
         ))
         .id();
 
-    let prompt = spawn_prompt(commands, a, &q.prompt);
+    let prompt = spawn_prompt(commands, a, t, &q.prompt);
 
     // Options in a 2×2 grid, numbered for the keyboard.
     let grid = commands
@@ -229,7 +239,7 @@ fn spawn_overlay(commands: &mut Commands, a: &GameAssets, q: &Question, kind: As
                 ..default()
             },
         ))
-        .with_child(label(a, "Press 1–4, or use the arrow keys and Enter", 18.0, ui::MUTED))
+        .with_child(label(a, t.answer_hint, 18.0, ui::MUTED))
         .id();
 
     commands.entity(card).add_children(&[header, bar_bg, prompt, grid, feedback]);
@@ -237,7 +247,7 @@ fn spawn_overlay(commands: &mut Commands, a: &GameAssets, q: &Question, kind: As
 
 /// Draws the question itself. Young players get the school column layout with tens in
 /// red and units in blue; fractions are stacked.
-fn spawn_prompt(commands: &mut Commands, a: &GameAssets, prompt: &Prompt) -> Entity {
+fn spawn_prompt(commands: &mut Commands, a: &GameAssets, t: &Strings, prompt: &Prompt) -> Entity {
     let container = commands
         .spawn(Node {
             flex_direction: FlexDirection::Row,
@@ -294,9 +304,9 @@ fn spawn_prompt(commands: &mut Commands, a: &GameAssets, prompt: &Prompt) -> Ent
                     };
                     r.spawn(cell.clone());
                     if two_columns {
-                        r.spawn(cell.clone()).with_child(label(a, "T", 18.0, ui::TENS));
+                        r.spawn(cell.clone()).with_child(label(a, t.tens_short, 18.0, ui::TENS));
                     }
-                    r.spawn(cell).with_child(label(a, "U", 18.0, ui::UNITS));
+                    r.spawn(cell).with_child(label(a, t.units_short, 18.0, ui::UNITS));
                 })
                 .id();
             let first = digit_row(commands, "", Some(*top), 60.0);
@@ -322,11 +332,8 @@ fn spawn_prompt(commands: &mut Commands, a: &GameAssets, prompt: &Prompt) -> Ent
             commands.entity(column).add_children(&[header, first, second, line, answer]);
             commands.entity(container).add_child(column);
         }
-        Prompt::Gcd { a: x, b: y } => {
-            commands.entity(container).with_child(label(a, format!("GCD({x}, {y}) = ?"), 54.0, ui::TEXT));
-        }
-        Prompt::Lcm { a: x, b: y } => {
-            commands.entity(container).with_child(label(a, format!("LCM({x}, {y}) = ?"), 54.0, ui::TEXT));
+        Prompt::Gcd { .. } | Prompt::Lcm { .. } => {
+            commands.entity(container).with_child(label(a, t.prompt_line(prompt), 54.0, ui::TEXT));
         }
         Prompt::Fraction { left, op, right } => {
             let left = stacked_fraction(commands, a, left.num, left.den);
@@ -393,6 +400,7 @@ fn answer_input(
     mut commands: Commands,
     feedback: Query<Entity, With<FeedbackArea>>,
     assets: Res<GameAssets>,
+    language: Res<Language>,
 ) {
     if asking.outcome.is_some() {
         clicked.0 = None;
@@ -438,16 +446,18 @@ fn answer_input(
 
     // Replace the hint with the verdict and the worked solution.
     let a = &*assets;
+    let t = language.t();
     let q = &asking.question;
     let (verdict, color) = match asking.outcome.unwrap() {
-        Outcome::Right => ("Correct!".to_string(), ui::GOOD),
-        _ => (format!("Not quite: the answer is {}", q.correct_value()), ui::BAD),
+        Outcome::Right => (t.correct.to_string(), ui::GOOD),
+        _ => (i18n::fill(t.not_quite, &[&q.correct_value()]), ui::BAD),
     };
+    let explanation = t.explain(q);
     for area in &feedback {
         commands.entity(area).despawn_children().with_children(|c| {
             c.spawn(label(a, verdict.clone(), 26.0, color));
-            c.spawn(label(a, q.explanation.clone(), 18.0, ui::MUTED));
-            c.spawn(label(a, "Press Space to continue", 16.0, ui::MUTED));
+            c.spawn(label(a, explanation.clone(), 18.0, ui::MUTED));
+            c.spawn(label(a, t.press_space_continue, 16.0, ui::MUTED));
         });
     }
 }
@@ -486,15 +496,17 @@ fn finish(
     mut commands: Commands,
     mut feedback: Query<&mut Children, With<FeedbackArea>>,
     mut texts: Query<&mut Text>,
+    language: Res<Language>,
 ) {
     let Some(outcome) = asking.outcome else { return };
+    let tr = language.t();
     // A timeout has no keypress behind it, so show its message once.
     if outcome == Outcome::TimeUp && asking.linger == 0.0 {
         for children in &mut feedback {
             for (n, child) in children.iter().enumerate() {
                 if let Ok(mut t) = texts.get_mut(child) {
                     t.0 = if n == 0 {
-                        format!("Time's up! The answer is {}. Press Space.", asking.question.correct_value())
+                        i18n::fill(tr.time_up_answer, &[&asking.question.correct_value()])
                     } else {
                         String::new()
                     };
@@ -522,11 +534,11 @@ fn finish(
                 ));
             }
             commands.entity(entity).despawn();
-            toast.show(format!("+{SCORE_CRYSTAL} · +{GEMS_PER_CRYSTAL} gems"));
+            toast.show(i18n::fill(tr.crystal_reward, &[&SCORE_CRYSTAL, &GEMS_PER_CRYSTAL]));
             commands.set_state(Screen::Running);
         }
-        (Outcome::Right, AskKind::Gate) => after_gate(&mut commands, &mut game, &worlds),
-        (Outcome::Wrong(_), _) => after_death(&mut commands, &mut game, &worlds, "Wrong answer!"),
-        (Outcome::TimeUp, _) => after_death(&mut commands, &mut game, &worlds, "Time's up!"),
+        (Outcome::Right, AskKind::Gate) => after_gate(&mut commands, tr, &mut game, &worlds),
+        (Outcome::Wrong(_), _) => after_death(&mut commands, tr, &mut game, &worlds, tr.wrong_answer),
+        (Outcome::TimeUp, _) => after_death(&mut commands, tr, &mut game, &worlds, tr.time_up),
     }
 }

@@ -4,13 +4,14 @@
 use bevy::prelude::*;
 
 use crate::domain::rules::{AfterDeath, AfterGate};
+use crate::i18n::{Strings, fill};
 
 use super::assets::GameAssets;
 use super::level::PendingBuild;
 use super::overlay::no_overlay;
 use super::theme::{AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
-use super::{Game, Screen, Worlds};
+use super::{Game, Language, Screen, Worlds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Then {
@@ -36,30 +37,19 @@ pub fn player_tag(game: &Game, index: usize) -> String {
     format!("{} · {}", p.config.label, p.config.character.name())
 }
 
-fn lives_line(lives: u8) -> String {
-    match lives {
-        0 => "No lives left".into(),
-        1 => "1 life left".into(),
-        n => format!("{n} lives left"),
-    }
-}
-
 /// The banner shown before someone (re)starts playing.
-pub fn turn_banner(game: &Game, worlds: &Worlds, title: String, extra: Option<String>) -> Banner {
+pub fn turn_banner(t: &Strings, game: &Game, worlds: &Worlds, title: String, extra: Option<String>) -> Banner {
     let p = game.0.player();
     let world = p.world.min(worlds.0.len() - 1);
     let mut lines = Vec::new();
     if let Some(extra) = extra {
         lines.push(extra);
     }
-    lines.push(format!(
-        "{} — World {}/{}: {}",
-        player_tag(game, game.0.current),
-        world + 1,
-        game.0.total_worlds,
-        worlds.0[world].name
+    lines.push(fill(
+        t.world_line,
+        &[&player_tag(game, game.0.current), &(world + 1), &game.0.total_worlds, &t.world(world)],
     ));
-    lines.push(format!("{} · {}", lives_line(p.lives), p.config.age.label()));
+    lines.push(format!("{} · {}", t.lives(p.lives), t.age(p.config.age)));
     Banner {
         title,
         lines,
@@ -68,18 +58,21 @@ pub fn turn_banner(game: &Game, worlds: &Worlds, title: String, extra: Option<St
 }
 
 /// Applies a death to the match and moves to the right banner.
-pub fn after_death(commands: &mut Commands, game: &mut Game, worlds: &Worlds, reason: &str) {
+pub fn after_death(commands: &mut Commands, t: &Strings, game: &mut Game, worlds: &Worlds, reason: &str) {
     let who = player_tag(game, game.0.current);
     let lives = game.0.player().lives;
     let banner = match game.0.died() {
-        AfterDeath::Continue => turn_banner(game, worlds, reason.to_string(), Some(format!("{who} lost a life"))),
+        AfterDeath::Continue => turn_banner(t, game, worlds, reason.to_string(), Some(fill(t.lost_life, &[&who]))),
         AfterDeath::SwitchTo(next) => {
-            let extra = format!("{who}: {}. Over to {}!", lives_line(lives.saturating_sub(1)), game.0.players[next].config.label);
-            turn_banner(game, worlds, reason.to_string(), Some(extra))
+            let extra = fill(
+                t.over_to,
+                &[&who, &t.lives(lives.saturating_sub(1)), &game.0.players[next].config.label],
+            );
+            turn_banner(t, game, worlds, reason.to_string(), Some(extra))
         }
         AfterDeath::GameOver => Banner {
-            title: "Game over".into(),
-            lines: vec![reason.to_string(), "Let's see the scores.".into()],
+            title: t.game_over.into(),
+            lines: vec![reason.to_string(), t.see_scores.into()],
             then: Then::Results,
         },
     };
@@ -91,17 +84,17 @@ pub fn after_death(commands: &mut Commands, game: &mut Game, worlds: &Worlds, re
 }
 
 /// Applies an opened gate to the match and moves to the right banner.
-pub fn after_gate(commands: &mut Commands, game: &mut Game, worlds: &Worlds) {
+pub fn after_gate(commands: &mut Commands, t: &Strings, game: &mut Game, worlds: &Worlds) {
     let who = player_tag(game, game.0.current);
     let banner = match game.0.gate_opened() {
-        AfterGate::NextWorld => turn_banner(game, worlds, "World cleared! +500".into(), None),
+        AfterGate::NextWorld => turn_banner(t, game, worlds, t.world_cleared.into(), None),
         AfterGate::Finished(AfterDeath::SwitchTo(next)) => {
-            let extra = format!("{who} cleared every world! Over to {}.", game.0.players[next].config.label);
-            turn_banner(game, worlds, "Champion!".into(), Some(extra))
+            let extra = fill(t.cleared_all_over_to, &[&who, &game.0.players[next].config.label]);
+            turn_banner(t, game, worlds, t.champion.into(), Some(extra))
         }
         AfterGate::Finished(_) => Banner {
-            title: "Champion!".into(),
-            lines: vec![format!("{who} cleared every world!"), "Let's see the scores.".into()],
+            title: t.champion.into(),
+            lines: vec![fill(t.cleared_all, &[&who]), t.see_scores.into()],
             then: Then::Results,
         },
     };
@@ -112,8 +105,15 @@ pub fn after_gate(commands: &mut Commands, game: &mut Game, worlds: &Worlds) {
     commands.set_state(Screen::Banner);
 }
 
-fn show(mut commands: Commands, banner: Res<Banner>, assets: Res<GameAssets>, rounding: Res<Rounding>) {
+fn show(
+    mut commands: Commands,
+    banner: Res<Banner>,
+    assets: Res<GameAssets>,
+    rounding: Res<Rounding>,
+    language: Res<Language>,
+) {
     let a = &*assets;
+    let t = language.t();
     let card = commands
         .spawn((ui::card(rounding.0), BackgroundColor(ui::PANEL), BorderColor::all(ui::TEXT), AccentBorder))
         .with_children(|c| {
@@ -122,8 +122,8 @@ fn show(mut commands: Commands, banner: Res<Banner>, assets: Res<GameAssets>, ro
                 c.spawn(label(a, line.clone(), 22.0, ui::TEXT));
             }
             let hint = match banner.then {
-                Then::Play => "Press Space to play",
-                Then::Results => "Press Space for the results",
+                Then::Play => t.press_space_play,
+                Then::Results => t.press_space_results,
             };
             c.spawn(label(a, hint, 18.0, ui::MUTED));
         })

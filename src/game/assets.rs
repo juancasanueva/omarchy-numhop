@@ -4,7 +4,8 @@
 use bevy::asset::LoadState;
 use bevy::prelude::*;
 
-use super::Screen;
+use super::{Language, Screen};
+use crate::i18n::fill;
 
 #[derive(Resource, Clone)]
 pub struct GameAssets {
@@ -59,7 +60,7 @@ fn model(server: &AssetServer, name: &str) -> Handle<WorldAsset> {
     server.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{name}.glb")))
 }
 
-fn load(mut commands: Commands, server: Res<AssetServer>) {
+fn load(mut commands: Commands, server: Res<AssetServer>, language: Res<Language>) {
     let assets = GameAssets {
         font: server.load("fonts/NotoSans-Bold.ttf"),
         symbols: server.load("fonts/NotoSansSymbols2-Regular.ttf"),
@@ -89,7 +90,7 @@ fn load(mut commands: Commands, server: Res<AssetServer>) {
             align_items: AlignItems::Center,
             ..default()
         },
-        children![(Text::new("Loading…"), TextColor(Color::WHITE))],
+        children![(Text::new(language.t().loading), TextColor(Color::WHITE))],
     ));
 }
 
@@ -99,6 +100,7 @@ fn wait_for_assets(
     mut next: ResMut<NextState<Screen>>,
     texts: Query<&Children, With<LoadingText>>,
     mut writer: Query<&mut Text>,
+    language: Res<Language>,
 ) {
     let mut failed = Vec::new();
     let mut pending = 0;
@@ -112,10 +114,7 @@ fn wait_for_assets(
         }
     }
     if !failed.is_empty() {
-        let message = format!(
-            "Could not load: {}\nReinstall numhop, or set NUMHOP_ASSETS to the assets folder.",
-            failed.join(", ")
-        );
+        let message = fill(language.t().load_failed, &[&failed.join(", ")]);
         for children in &texts {
             for child in children.iter() {
                 if let Ok(mut text) = writer.get_mut(child) {

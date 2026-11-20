@@ -7,6 +7,7 @@ use bevy::prelude::*;
 
 use crate::domain::math::AgeLevel;
 use crate::domain::rules::{Character, Match, PlayerConfig};
+use crate::i18n::fill;
 
 use super::assets::GameAssets;
 use super::banner::turn_banner;
@@ -14,13 +15,23 @@ use super::level::{LevelEntity, MainCamera, PendingBuild, facing_rotation, hero_
 use super::overlay::no_overlay;
 use super::theme::{Accent, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
-use super::{Game, Screen, Worlds};
+use super::{Game, Language, Screen, Worlds};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Page {
+    #[default]
+    Main,
+    Settings,
+}
 
 #[derive(Resource, Debug, Clone)]
 pub struct MenuChoices {
     pub players: usize,
+    /// Ages and heroes; each player's label is written in the current language
+    /// when the match starts.
     pub configs: [PlayerConfig; 2],
-    pub row: usize,
+    row: usize,
+    page: Page,
 }
 
 impl Default for MenuChoices {
@@ -29,17 +40,18 @@ impl Default for MenuChoices {
             players: 1,
             configs: [
                 PlayerConfig {
-                    label: "Player 1".into(),
+                    label: String::new(),
                     age: AgeLevel::Six,
                     character: Character::Pip,
                 },
                 PlayerConfig {
-                    label: "Player 2".into(),
+                    label: String::new(),
                     age: AgeLevel::Twelve,
                     character: Character::Bolt,
                 },
             ],
             row: 0,
+            page: Page::Main,
         }
     }
 }
@@ -49,17 +61,30 @@ enum Row {
     Players,
     Age(usize),
     Hero(usize),
+    Settings,
     Start,
+    Language,
+    Back,
 }
 
 impl MenuChoices {
     fn rows(&self) -> Vec<Row> {
-        let mut rows = vec![Row::Players, Row::Age(0), Row::Hero(0)];
-        if self.players == 2 {
-            rows.extend([Row::Age(1), Row::Hero(1)]);
+        match self.page {
+            Page::Main => {
+                let mut rows = vec![Row::Players, Row::Age(0), Row::Hero(0)];
+                if self.players == 2 {
+                    rows.extend([Row::Age(1), Row::Hero(1)]);
+                }
+                rows.extend([Row::Settings, Row::Start]);
+                rows
+            }
+            Page::Settings => vec![Row::Language, Row::Back],
         }
-        rows.push(Row::Start);
-        rows
+    }
+
+    fn open(&mut self, page: Page, focus: Row) {
+        self.page = page;
+        self.row = self.rows().iter().position(|r| *r == focus).unwrap_or(0);
     }
 }
 
@@ -74,10 +99,15 @@ pub fn plugin(app: &mut App) {
         .add_systems(OnEnter(Screen::Menu), (enter, draw).chain())
         .add_systems(
             Update,
-            (navigate, draw.run_if(resource_changed::<MenuChoices>), spin_heroes)
+            (navigate, draw.run_if(menu_changed), spin_heroes)
                 .chain()
                 .run_if(in_state(Screen::Menu).and_then(no_overlay)),
         );
+}
+
+/// The menu redraws when a choice changes and when the language does.
+fn menu_changed(choices: Res<MenuChoices>, language: Res<Language>) -> bool {
+    choices.is_changed() || language.is_changed()
 }
 
 fn enter(
@@ -129,6 +159,7 @@ fn draw(
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
     accent: Res<Accent>,
+    language: Res<Language>,
     old_ui: Query<Entity, With<MenuUi>>,
     old_heroes: Query<Entity, With<MenuHero>>,
 ) {
@@ -136,6 +167,7 @@ fn draw(
         commands.entity(e).despawn();
     }
     let a = &*assets;
+    let t = language.t();
 
     // Heroes on the stage reflect the current picks.
     let positions: &[f32] = if choices.players == 1 { &[-1.6] } else { &[-2.2, -0.9] };
@@ -161,24 +193,36 @@ fn draw(
         ))
         .with_children(|c| {
             c.spawn((label(a, "numhop", 64.0, ui::TEXT), AccentText));
-            c.spawn(label(a, "Hop, jump, and solve!", 20.0, ui::MUTED));
+            let subtitle = match choices.page {
+                Page::Main => t.tagline,
+                Page::Settings => t.settings,
+            };
+            c.spawn(label(a, subtitle, 20.0, ui::MUTED));
         })
         .id();
 
     for (i, row) in rows.iter().enumerate() {
         let selected = i == choices.row;
         let (name, value) = match row {
-            Row::Players => ("Players".to_string(), format!("{}", choices.players)),
-            Row::Age(p) => (format!("{} level", choices.configs[*p].label), choices.configs[*p].age.label().to_string()),
-            Row::Hero(p) => (format!("{} hero", choices.configs[*p].label), choices.configs[*p].character.name().to_string()),
-            Row::Start => ("Start".to_string(), String::new()),
+            Row::Players => (t.players.to_string(), choices.players.to_string()),
+            Row::Age(p) => (fill(t.player_level, &[&t.player(*p)]), t.age(choices.configs[*p].age).to_string()),
+            Row::Hero(p) => (
+                fill(t.player_hero, &[&t.player(*p)]),
+                choices.configs[*p].character.name().to_string(),
+            ),
+            Row::Settings => (t.settings.to_string(), String::new()),
+            Row::Start => (t.start.to_string(), String::new()),
+            Row::Language => (t.language.to_string(), language.0.native_name().to_string()),
+            Row::Back => (t.back.to_string(), String::new()),
         };
+        // The main action of each page stands out, centered and larger.
+        let primary = matches!(row, Row::Start | Row::Back);
         let border = if selected { accent.0 } else { Color::NONE };
         let row_entity = commands
             .spawn((
                 Node {
                     width: percent(100),
-                    justify_content: if *row == Row::Start { JustifyContent::Center } else { JustifyContent::SpaceBetween },
+                    justify_content: if primary { JustifyContent::Center } else { JustifyContent::SpaceBetween },
                     column_gap: px(30),
                     padding: UiRect::axes(px(16), px(10)),
                     border: UiRect::all(px(2)),
@@ -189,8 +233,8 @@ fn draw(
                 BackgroundColor(if selected { Color::srgba(1.0, 1.0, 1.0, 0.08) } else { Color::NONE }),
             ))
             .with_children(|r| {
-                let size = if *row == Row::Start { 28.0 } else { 20.0 };
-                r.spawn(label(a, name, size, if *row == Row::Start { ui::TEXT } else { ui::MUTED }));
+                let size = if primary { 28.0 } else { 20.0 };
+                r.spawn(label(a, name, size, if primary { ui::TEXT } else { ui::MUTED }));
                 if !value.is_empty() {
                     let shown = if selected { format!("‹  {value}  ›") } else { value };
                     r.spawn(label(a, shown, 20.0, ui::TEXT));
@@ -199,7 +243,11 @@ fn draw(
             .id();
         commands.entity(card).add_child(row_entity);
     }
-    commands.entity(card).with_child(label(a, "Up/Down choose · Left/Right change · Enter start · ? help", 15.0, ui::MUTED));
+    let hint = match choices.page {
+        Page::Main => t.menu_hint,
+        Page::Settings => t.settings_hint,
+    };
+    commands.entity(card).with_child(label(a, hint, 15.0, ui::MUTED));
 
     commands
         .spawn((
@@ -221,6 +269,7 @@ fn draw(
 fn navigate(
     keys: Res<ButtonInput<KeyCode>>,
     mut choices: ResMut<MenuChoices>,
+    mut language: ResMut<Language>,
     worlds: Res<Worlds>,
     mut commands: Commands,
 ) {
@@ -232,21 +281,36 @@ fn navigate(
     if keys.any_just_pressed([KeyCode::ArrowUp, KeyCode::KeyW]) {
         choices.row = (choices.row + rows.len() - 1) % rows.len();
     }
-    let change = keys.any_just_pressed([KeyCode::ArrowLeft, KeyCode::ArrowRight, KeyCode::KeyA, KeyCode::KeyD]);
+    let left = keys.any_just_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
+    let right = keys.any_just_pressed([KeyCode::ArrowRight, KeyCode::KeyD]);
     let confirm = keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]);
-    let start = keys.just_pressed(KeyCode::Space) || (confirm && row == Row::Start);
 
+    if choices.page == Page::Settings {
+        let back = keys.any_just_pressed([KeyCode::Escape, KeyCode::Backspace]) || (confirm && row == Row::Back);
+        if back {
+            choices.open(Page::Main, Row::Settings);
+        } else if row == Row::Language && (left || right || confirm) {
+            language.0 = if left { language.0.previous() } else { language.0.next() };
+        }
+        return;
+    }
+
+    let start = keys.just_pressed(KeyCode::Space) || (confirm && row == Row::Start);
     if start {
-        let configs = choices.configs[..choices.players].to_vec();
+        let t = language.t();
+        let mut configs = choices.configs[..choices.players].to_vec();
+        for (i, c) in configs.iter_mut().enumerate() {
+            c.label = t.player(i);
+        }
         let game = Game(Match::new(configs, worlds.0.len()));
-        let banner = turn_banner(&game, &worlds, "Ready?".into(), None);
+        let banner = turn_banner(t, &game, &worlds, t.ready.into(), None);
         commands.insert_resource(game);
         commands.insert_resource(banner);
         commands.insert_resource(PendingBuild);
         commands.set_state(Screen::Banner);
         return;
     }
-    if change || confirm {
+    if left || right || confirm {
         match row {
             Row::Players => {
                 choices.players = if choices.players == 1 { 2 } else { 1 };
@@ -254,7 +318,8 @@ fn navigate(
             }
             Row::Age(p) => choices.configs[p].age = choices.configs[p].age.toggle(),
             Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
-            Row::Start => {}
+            Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),
+            _ => {}
         }
     }
 }

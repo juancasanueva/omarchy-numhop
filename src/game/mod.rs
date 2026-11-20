@@ -10,6 +10,8 @@ use bevy::window::{Window, WindowPlugin};
 use crate::domain::levels::{self, Level};
 use crate::domain::rng::Rng;
 use crate::domain::rules::Match;
+use crate::i18n::{Lang, Strings};
+use crate::settings::{self, Settings};
 
 mod assets;
 mod banner;
@@ -45,11 +47,46 @@ pub struct Worlds(pub Vec<Level>);
 #[derive(Resource)]
 pub struct GameRng(pub Rng);
 
+/// The language everything is shown in. Changed from the Settings page and saved.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Language(pub Lang);
+
+impl Language {
+    pub fn t(&self) -> &'static Strings {
+        self.0.strings()
+    }
+}
+
+/// `NUMHOP_LANG` picks the language for one run without touching saved settings, which
+/// keeps scripted screenshots and tests from rewriting the player's choice.
+fn initial_language() -> (Lang, bool) {
+    if let Some(lang) = std::env::var("NUMHOP_LANG").ok().and_then(|c| Lang::from_code(&c)) {
+        return (lang, false);
+    }
+    let persist = std::env::var_os("NUMHOP_CAPTURE").is_none();
+    (settings::load_or_default().lang, persist)
+}
+
+#[derive(Resource)]
+struct PersistLanguage(bool);
+
+fn save_language(language: Res<Language>, persist: Res<PersistLanguage>) {
+    if !persist.0 || language.is_added() {
+        return;
+    }
+    if let Some(path) = settings::settings_path()
+        && let Err(err) = settings::save(&path, &Settings { lang: language.0 })
+    {
+        warn!("could not save settings to {}: {err}", path.display());
+    }
+}
+
 /// The match in progress. Present from the moment the menu starts a game.
 #[derive(Resource)]
 pub struct Game(pub Match);
 
 pub fn run() -> AppExit {
+    let (lang, persist) = initial_language();
     App::new()
         .add_plugins(
             DefaultPlugins
@@ -71,6 +108,9 @@ pub fn run() -> AppExit {
         .insert_resource(Worlds(levels::worlds()))
         .insert_resource(GameRng(Rng::from_time()))
         .insert_resource(ClearColor(Color::srgb(0.53, 0.78, 0.96)))
+        .insert_resource(Language(lang))
+        .insert_resource(PersistLanguage(persist))
+        .add_systems(Update, save_language.run_if(resource_changed::<Language>))
         .add_plugins((
             assets::plugin,
             theme::plugin,

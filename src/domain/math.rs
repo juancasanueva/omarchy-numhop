@@ -19,13 +19,6 @@ pub enum AgeLevel {
 }
 
 impl AgeLevel {
-    pub fn label(self) -> &'static str {
-        match self {
-            AgeLevel::Six => "Age 6: add & subtract",
-            AgeLevel::Twelve => "Age 12: GCD, LCM, fractions",
-        }
-    }
-
     pub fn toggle(self) -> Self {
         match self {
             AgeLevel::Six => AgeLevel::Twelve,
@@ -44,16 +37,6 @@ pub enum Topic {
 }
 
 impl Topic {
-    pub fn label(self) -> &'static str {
-        match self {
-            Topic::Addition => "Addition with carrying",
-            Topic::Subtraction => "Subtraction",
-            Topic::Gcd => "Greatest common divisor",
-            Topic::Lcm => "Least common multiple",
-            Topic::Fractions => "Fractions",
-        }
-    }
-
     pub fn for_age(age: AgeLevel) -> &'static [Topic] {
         match age {
             AgeLevel::Six => &[Topic::Addition, Topic::Subtraction],
@@ -174,7 +157,7 @@ impl FracOp {
         }
     }
 
-    fn apply(self, a: Fraction, b: Fraction) -> Fraction {
+    pub fn apply(self, a: Fraction, b: Fraction) -> Fraction {
         match self {
             FracOp::Add => a.add(b),
             FracOp::Sub => a.sub(b),
@@ -182,6 +165,24 @@ impl FracOp {
             FracOp::Div => a.div(b),
         }
     }
+}
+
+/// The steps of adding or subtracting fractions over a common denominator:
+/// `ln/common op rn/common = raw/common`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommonDenominator {
+    pub common: i64,
+    pub left_num: i64,
+    pub right_num: i64,
+    pub raw: i64,
+}
+
+pub fn common_denominator(left: RawFraction, op: FracOp, right: RawFraction) -> CommonDenominator {
+    let common = lcm(left.den, right.den);
+    let left_num = left.num * (common / left.den);
+    let right_num = right.num * (common / right.den);
+    let raw = if op == FracOp::Sub { left_num - right_num } else { left_num + right_num };
+    CommonDenominator { common, left_num, right_num, raw }
 }
 
 /// How the question is presented. The UI decides the exact layout for each shape.
@@ -250,8 +251,6 @@ pub struct Question {
     pub prompt: Prompt,
     pub options: [AnswerValue; 4],
     pub correct: usize,
-    /// A short worked solution, shown after the player answers.
-    pub explanation: String,
 }
 
 impl Question {
@@ -354,27 +353,12 @@ fn addition(tier: u8, rng: &mut Rng) -> Question {
     let mut candidates = vec![answer - 10, answer + 10, answer + 1, answer - 1, answer + 2];
     rng.shuffle(&mut candidates[1..]);
     let (options, correct) = whole_options(answer, &candidates, 0, rng);
-    let units = top % 10 + bottom % 10;
-    let explanation = if top < 10 && bottom < 10 {
-        format!("{top} + {bottom} = {answer}: write {} in the units and carry 1 to the tens.", answer % 10)
-    } else {
-        format!(
-        "Units: {} + {} = {units}, write {} and carry 1. Tens: {} + {} + 1 = {}. Answer: {answer}.",
-        top % 10,
-        bottom % 10,
-        units % 10,
-        top / 10,
-        bottom / 10,
-        top / 10 + bottom / 10 + 1
-        )
-    };
     Question {
         topic: Topic::Addition,
         tier,
         prompt: Prompt::Vertical { top, bottom, plus: true },
         options,
         correct,
-        explanation,
     }
 }
 
@@ -407,26 +391,12 @@ fn subtraction(tier: u8, rng: &mut Rng) -> Question {
     let mut candidates = vec![top + bottom, answer + 1, answer - 1, answer + 10, answer - 10, answer + 2];
     rng.shuffle(&mut candidates);
     let (options, correct) = whole_options(answer, &candidates, 0, rng);
-    let explanation = if top >= 10 {
-        format!(
-            "Units: {} − {} = {}. Tens: {} − {} = {}. Answer: {answer}.",
-            top % 10,
-            bottom % 10,
-            top % 10 - bottom % 10,
-            top / 10,
-            bottom / 10,
-            top / 10 - bottom / 10
-        )
-    } else {
-        format!("{top} − {bottom} = {answer}.")
-    };
     Question {
         topic: Topic::Subtraction,
         tier,
         prompt: Prompt::Vertical { top, bottom, plus: false },
         options,
         correct,
-        explanation,
     }
 }
 
@@ -461,7 +431,8 @@ pub fn prime_factors(mut n: i64) -> Vec<(i64, u32)> {
     out
 }
 
-fn factor_string(n: i64) -> String {
+/// Prime factorization written as `2^2·3`, the same in every language.
+pub fn factor_string(n: i64) -> String {
     let parts: Vec<String> = prime_factors(n)
         .into_iter()
         .map(|(p, e)| if e == 1 { p.to_string() } else { format!("{p}^{e}") })
@@ -490,11 +461,6 @@ fn gcd_question(tier: u8, rng: &mut Rng) -> Question {
         prompt: Prompt::Gcd { a, b },
         options,
         correct,
-        explanation: format!(
-            "{a} = {}, {b} = {}. Common factors give GCD = {answer}.",
-            factor_string(a),
-            factor_string(b)
-        ),
     }
 }
 
@@ -522,11 +488,6 @@ fn lcm_question(tier: u8, rng: &mut Rng) -> Question {
         prompt: Prompt::Lcm { a, b },
         options,
         correct,
-        explanation: format!(
-            "{a} = {}, {b} = {}. Take every factor at its highest power: LCM = {answer}.",
-            factor_string(a),
-            factor_string(b)
-        ),
     }
 }
 
@@ -603,39 +564,12 @@ fn fraction_question(tier: u8, rng: &mut Rng) -> Question {
         AnswerValue::Frac(picked[3]),
     ];
 
-    let explanation = match op {
-        FracOp::Add | FracOp::Sub => {
-            let common = lcm(left.den, right.den);
-            let ln = left.num * (common / left.den);
-            let rn = right.num * (common / right.den);
-            let raw = if op == FracOp::Add { ln + rn } else { ln - rn };
-            format!(
-                "Common denominator {common}: {ln}/{common} {} {rn}/{common} = {raw}/{common} = {answer}.",
-                op.symbol()
-            )
-        }
-        FracOp::Mul => format!(
-            "Multiply across: {}·{} / {}·{} = {}/{} = {answer}.",
-            left.num,
-            right.num,
-            left.den,
-            right.den,
-            left.num * right.num,
-            left.den * right.den
-        ),
-        FracOp::Div => format!(
-            "Flip the second and multiply: {}/{} × {}/{} = {answer}.",
-            left.num, left.den, right.den, right.num
-        ),
-    };
-
     Question {
         topic: Topic::Fractions,
         tier,
         prompt: Prompt::Fraction { left, op, right },
         options,
         correct,
-        explanation,
     }
 }
 

@@ -12,7 +12,7 @@ use super::level::{
 };
 use super::overlay::no_overlay;
 use super::question::{AskKind, AskRequest};
-use super::{Game, Screen, Worlds};
+use super::{Game, Language, Screen, Worlds};
 
 const GRAVITY: f32 = 34.0;
 const JUMP_SPEED: f32 = 14.6;
@@ -241,12 +241,14 @@ fn interactions(
     gems: Query<(Entity, &Transform, &GemPickup), Without<Player>>,
     flags: Query<(&Transform, &CheckpointFlag), Without<Player>>,
     key: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
+    language: Res<Language>,
 ) {
     let Ok((ptf, mut pbody)) = player.single_mut() else { return };
     let pos = ptf.translation;
+    let t = language.t();
 
     if pos.y < PIT_DEPTH {
-        after_death(&mut commands, &mut game, &worlds, "You fell into a gap!");
+        after_death(&mut commands, t, &mut game, &worlds, t.fell);
         return;
     }
 
@@ -261,7 +263,7 @@ fn interactions(
             game.0.stomped();
             toast.show("+100");
         } else {
-            after_death(&mut commands, &mut game, &worlds, "A Grumble got you!");
+            after_death(&mut commands, t, &mut game, &worlds, t.grumble);
             return;
         }
     }
@@ -275,7 +277,7 @@ fn interactions(
 
     for (ftf, flag) in &flags {
         if pos.x >= ftf.translation.x && game.0.checkpoint_reached(flag.index) {
-            toast.show("Checkpoint!");
+            toast.show(t.checkpoint);
         }
     }
 

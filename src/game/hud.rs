@@ -11,7 +11,8 @@ use super::assets::GameAssets;
 use super::level::{Grid, Player};
 use super::theme::{Accent, AccentText, Rounding};
 use super::ui::{self, label, symbol_font};
-use super::{Game, Screen, Worlds};
+use super::{Game, Language, Screen, Worlds};
+use crate::i18n::fill;
 
 #[derive(Resource, Default)]
 pub struct Toast {
@@ -61,7 +62,9 @@ fn spawn_or_despawn(
     roots: Query<Entity, With<HudRoot>>,
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
+    language: Res<Language>,
 ) {
+    let t = language.t();
     let wanted = game.is_some() && matches!(screen.get(), Screen::Banner | Screen::Running | Screen::Asking);
     let exists = !roots.is_empty();
     if wanted == exists {
@@ -148,7 +151,7 @@ fn spawn_or_despawn(
             c.spawn((WorldText, label(a, "", 20.0, ui::TEXT)));
             c.spawn(Node { column_gap: px(8), align_items: AlignItems::Center, ..default() })
                 .with_children(|r| {
-                    r.spawn(label(a, "Difficulty", 16.0, ui::MUTED));
+                    r.spawn(label(a, t.difficulty, 16.0, ui::MUTED));
                     r.spawn((TierText, Text::new(""), symbol_font(a, 20.0), TextColor(ui::TEXT), AccentText));
                 });
         })
@@ -172,7 +175,7 @@ fn spawn_or_despawn(
         })
         .with_child(label(
             a,
-            "Left/Right move · Space jump · hit crystals from below · ? help · Q quit",
+            t.hud_hint,
             16.0,
             Color::srgba(1.0, 1.0, 1.0, 0.8),
         ))
@@ -188,6 +191,7 @@ fn update(
     worlds: Res<Worlds>,
     grid: Res<Grid>,
     accent: Res<Accent>,
+    language: Res<Language>,
     mut toast: ResMut<Toast>,
     player: Query<&Transform, With<Player>>,
     mut panels: Query<(&PlayerPanel, &mut BorderColor)>,
@@ -200,6 +204,7 @@ fn update(
     )>,
 ) {
     let m = &game.0;
+    let t = language.t();
     for (panel, mut border) in &mut panels {
         let color = if panel.0 == m.current && !m.solo() { accent.0 } else { Color::NONE };
         *border = BorderColor::all(color);
@@ -212,23 +217,20 @@ fn update(
     for (s, mut text) in &mut texts.p1() {
         let p = &m.players[s.0];
         let status = if p.finished {
-            "Cleared! · ".to_string()
+            t.status_cleared.to_string()
         } else if p.lives == 0 {
-            "Out · ".to_string()
+            t.status_out.to_string()
         } else {
             String::new()
         };
-        text.0 = format!(
-            "{status}{} pts · {} gems · World {}/{}",
-            p.score,
-            p.gems,
-            (p.world + 1).min(m.total_worlds),
-            m.total_worlds
+        text.0 = fill(
+            t.hud_stats,
+            &[&status, &p.score, &p.gems, &(p.world + 1).min(m.total_worlds), &m.total_worlds],
         );
     }
     let world = grid.world.min(worlds.0.len() - 1);
     for mut text in &mut texts.p2() {
-        text.0 = format!("World {}: {}", world + 1, worlds.0[world].name);
+        text.0 = fill(t.hud_world, &[&(world + 1), &t.world(world)]);
     }
     let ratio = player.single().map(|t| t.translation.x / grid.width.max(1) as f32).unwrap_or(0.0);
     let tier = m.tier(ratio);
