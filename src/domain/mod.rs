@@ -2,6 +2,7 @@
 
 pub mod levels;
 pub mod math;
+pub mod practice;
 pub mod records;
 pub mod rng;
 pub mod rules;

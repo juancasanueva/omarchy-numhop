@@ -90,6 +90,11 @@ have reached, so nobody has to replay world 1 every time. Progress is saved afte
 every cleared world, and the results mark any **New best!** score. **High scores** in
 the main menu lists the top players by best score, with the worlds each has cleared.
 
+Practice follows each player too. Topics they get wrong come up more often (every
+topic still comes up), a missed question returns two questions later with its answers
+shuffled, and each topic's difficulty rises after three right answers in a row and
+drops after a miss. This is kept with the records, per name.
+
 ## Language
 
 numhop speaks English and Spanish (Español). Pick one under **Settings** in the

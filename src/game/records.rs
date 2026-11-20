@@ -26,6 +26,11 @@ impl SavedRecords {
         Self { records, path: None, unsaved: false }
     }
 
+    /// Something changed that the next banner should save.
+    pub fn mark_unsaved(&mut self) {
+        self.unsaved = true;
+    }
+
     /// The record key for seat `seat`, from the names typed in the menu.
     pub fn key(names: &PlayerNames, seat: usize) -> String {
         record_key(&names.0[seat], seat)

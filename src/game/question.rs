@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, Button, observe};
 
 use crate::domain::math::{self, ColumnOp, Prompt, Question};
+use crate::domain::practice::{RetryQueue, next_question, record_answer};
 use crate::domain::rules::{GEMS_PER_CRYSTAL, QUESTION_SECONDS, SCORE_CRYSTAL};
 use crate::i18n::{self, Strings};
 
@@ -18,10 +19,11 @@ use super::banner::{after_death, after_gate};
 use super::hud::Toast;
 use super::level::{CrystalBlock, Grid, LevelEntity, cell_center};
 use super::overlay::no_overlay;
+use super::records::SavedRecords;
 use super::sound::{PlaySfx, Sfx};
 use super::theme::{Accent, AccentBackground, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label, symbol_font};
-use super::{Game, GameRng, Language, Screen, Worlds};
+use super::{Game, GameRng, Language, PlayerNames, Screen, Worlds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AskKind {
@@ -44,10 +46,17 @@ enum Outcome {
     TimeUp,
 }
 
+/// Missed questions waiting to come back, per seat. They last for the session and are
+/// dropped on the menu, where names and ages can change.
+#[derive(Resource, Default)]
+struct Retries([RetryQueue; 2]);
+
 #[derive(Resource)]
 pub(super) struct Asking {
     kind: AskKind,
     pub(super) question: Question,
+    /// A missed question asked again; missing it again does not queue it a third time.
+    retry: bool,
     remaining: f32,
     selected: usize,
     outcome: Option<Outcome>,
@@ -72,6 +81,8 @@ struct FeedbackArea;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Clicked>()
+        .init_resource::<Retries>()
+        .add_systems(OnEnter(Screen::Menu), |mut retries: ResMut<Retries>| *retries = Retries::default())
         .add_systems(OnEnter(Screen::Asking), open)
         .add_systems(OnExit(Screen::Asking), |mut commands: Commands| commands.remove_resource::<Asking>())
         .add_systems(
@@ -90,16 +101,21 @@ fn open(
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
     language: Res<Language>,
+    names: Res<PlayerNames>,
+    saved: Res<SavedRecords>,
+    mut retries: ResMut<Retries>,
 ) {
-    let tier = game.0.tier(request.ratio);
+    let seat = game.0.current;
     let age = game.0.player().config.age;
-    let question = math::generate(age, tier, &mut rng.0);
+    let practice = saved.records.practice(&SavedRecords::key(&names, seat));
+    let (question, retry) = next_question(&practice, &mut retries.0[seat], age, game.0.tier(request.ratio), &mut rng.0);
     debug_assert!(math::validate(&question).is_ok());
     spawn_overlay(&mut commands, &assets, language.t(), &question, request.kind, rounding.0, &game);
     commands.write_message(PlaySfx(Sfx::Ask));
     commands.insert_resource(Asking {
         kind: request.kind,
         question,
+        retry,
         remaining: QUESTION_SECONDS,
         selected: 0,
         outcome: None,
@@ -499,6 +515,9 @@ fn finish(
     mut feedback: Query<&mut Children, With<FeedbackArea>>,
     mut texts: Query<&mut Text>,
     language: Res<Language>,
+    names: Res<PlayerNames>,
+    mut saved: ResMut<SavedRecords>,
+    mut retries: ResMut<Retries>,
 ) {
     let Some(outcome) = asking.outcome else { return };
     let tr = language.t();
@@ -523,6 +542,11 @@ fn finish(
     if !(ready && pressed) && asking.linger < 8.0 {
         return;
     }
+    // Recorded for the seat that answered, before a death or a gate passes the turn.
+    let seat = game.0.current;
+    let practice = saved.records.practice_mut(&SavedRecords::key(&names, seat));
+    record_answer(practice, &mut retries.0[seat], &asking.question, outcome == Outcome::Right, asking.retry);
+    saved.mark_unsaved();
     match (outcome, asking.kind) {
         (Outcome::Right, AskKind::Crystal { index, entity }) => {
             game.0.crystal_solved(index);

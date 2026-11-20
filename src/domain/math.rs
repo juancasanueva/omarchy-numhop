@@ -40,7 +40,7 @@ impl AgeLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Topic {
     Addition,
     Subtraction,
@@ -69,6 +69,27 @@ impl Topic {
         Topic::Lcm,
         Topic::Fractions,
     ];
+
+    /// A stable name for saving, independent of the language shown.
+    pub fn id(self) -> &'static str {
+        match self {
+            Topic::Addition => "addition",
+            Topic::Subtraction => "subtraction",
+            Topic::SubtractionBorrow => "subtraction_borrow",
+            Topic::TimesTables => "times_tables",
+            Topic::Multiplication => "multiplication",
+            Topic::Division => "division",
+            Topic::Decimals => "decimals",
+            Topic::FractionOf => "fraction_of",
+            Topic::Gcd => "gcd",
+            Topic::Lcm => "lcm",
+            Topic::Fractions => "fractions",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Topic> {
+        Topic::ALL.into_iter().find(|t| t.id() == id)
+    }
 
     pub fn for_age(age: AgeLevel) -> &'static [Topic] {
         match age {

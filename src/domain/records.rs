@@ -12,6 +12,8 @@
 
 use std::collections::BTreeMap;
 
+use super::math::Topic;
+use super::practice::{Practice, Skill};
 use super::rules::clean_name;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -30,7 +32,11 @@ pub struct Improved {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Records(BTreeMap<String, Record>);
+pub struct Records {
+    players: BTreeMap<String, Record>,
+    /// What each player has been practising, by the same keys.
+    practice: BTreeMap<String, Practice>,
+}
 
 /// Whether `score` beats the best saved before the match. Without a saved best to
 /// compare with, nothing is claimed.
@@ -64,13 +70,22 @@ pub fn record_key(name: &str, seat: usize) -> String {
 }
 
 impl Records {
+    /// What this player has been practising; nothing yet for a new player.
+    pub fn practice(&self, key: &str) -> Practice {
+        self.practice.get(key).cloned().unwrap_or_default()
+    }
+
+    pub fn practice_mut(&mut self, key: &str) -> &mut Practice {
+        self.practice.entry(key.to_string()).or_default()
+    }
+
     pub fn get(&self, key: &str) -> Record {
-        self.0.get(key).copied().unwrap_or_default()
+        self.players.get(key).copied().unwrap_or_default()
     }
 
     /// Keeps the better of the saved record and this result, and says what improved.
     pub fn merge(&mut self, key: &str, score: u32, worlds_cleared: usize) -> Improved {
-        let record = self.0.entry(key.to_string()).or_default();
+        let record = self.players.entry(key.to_string()).or_default();
         let improved = Improved {
             best_score: score > record.best_score,
             worlds_cleared: worlds_cleared > record.worlds_cleared,
@@ -83,17 +98,25 @@ impl Records {
     /// Takes in another set of records, keeping the better value of each, so progress
     /// saved meanwhile by another running copy of the game is not lost.
     pub fn absorb(&mut self, other: &Records) {
-        for (key, theirs) in &other.0 {
-            let mine = self.0.entry(key.clone()).or_default();
+        for (key, theirs) in &other.players {
+            let mine = self.players.entry(key.clone()).or_default();
             mine.best_score = mine.best_score.max(theirs.best_score);
             mine.worlds_cleared = mine.worlds_cleared.max(theirs.worlds_cleared);
+        }
+        // Practice has no "better" value: keep what this run knows about a topic, and
+        // take the other copy's view of topics this run has not touched.
+        for (key, theirs) in &other.practice {
+            let mine = self.practice.entry(key.clone()).or_default();
+            for (topic, skill) in &theirs.0 {
+                mine.0.entry(*topic).or_insert(*skill);
+            }
         }
     }
 
     /// Players with any progress, best score first, then most worlds cleared.
     pub fn ranked(&self) -> Vec<(&str, Record)> {
         let mut list: Vec<(&str, Record)> = self
-            .0
+            .players
             .iter()
             .filter(|(_, r)| r.best_score > 0 || r.worlds_cleared > 0)
             .map(|(k, r)| (k.as_str(), *r))
@@ -113,36 +136,47 @@ impl Records {
     /// Reads records, skipping anything it does not understand, so a damaged file loses
     /// only the damaged part.
     pub fn parse(text: &str) -> Self {
-        let mut records = BTreeMap::new();
-        let mut current: Option<(String, Record)> = None;
+        let mut records = Records::default();
+        let mut current: Option<String> = None;
         for line in text.lines().map(str::trim) {
             if let Some(key) = line.strip_prefix("[\"").and_then(|l| l.strip_suffix("\"]")) {
-                if let Some((k, r)) = current.take() {
-                    records.insert(k, r);
-                }
-                current = (!key.is_empty() && !key.contains(['"', '\\'])).then(|| (key.to_string(), Record::default()));
+                current = (!key.is_empty() && !key.contains(['"', '\\'])).then(|| key.to_string());
                 continue;
             }
-            let (Some((_, record)), Some((name, value))) = (current.as_mut(), line.split_once('=')) else { continue };
-            match (name.trim(), value.trim()) {
-                ("best_score", v) => record.best_score = v.parse().unwrap_or(record.best_score),
-                ("worlds_cleared", v) => record.worlds_cleared = v.parse().unwrap_or(record.worlds_cleared),
+            let (Some(key), Some((name, value))) = (current.as_ref(), line.split_once('=')) else { continue };
+            let (name, value) = (name.trim(), value.trim());
+            if let Some(topic) = name.strip_prefix("practice.").and_then(Topic::from_id) {
+                if let Some(skill) = Skill::parse(value) {
+                    records.practice_mut(key).0.insert(topic, skill);
+                }
+                continue;
+            }
+            match name {
+                "best_score" | "worlds_cleared" => {
+                    let record = records.players.entry(key.clone()).or_default();
+                    if name == "best_score" {
+                        record.best_score = value.parse().unwrap_or(record.best_score);
+                    } else {
+                        record.worlds_cleared = value.parse().unwrap_or(record.worlds_cleared);
+                    }
+                }
                 _ => {}
             }
         }
-        if let Some((k, r)) = current {
-            records.insert(k, r);
-        }
-        Self(records)
+        records
     }
 
     pub fn render(&self) -> String {
         let mut out = String::from("# numhop records\n");
-        for (key, record) in &self.0 {
-            out.push_str(&format!(
-                "\n[\"{key}\"]\nbest_score = {}\nworlds_cleared = {}\n",
-                record.best_score, record.worlds_cleared
-            ));
+        let keys: std::collections::BTreeSet<&String> = self.players.keys().chain(self.practice.keys()).collect();
+        for key in keys {
+            out.push_str(&format!("\n[\"{key}\"]\n"));
+            if let Some(record) = self.players.get(key) {
+                out.push_str(&format!("best_score = {}\nworlds_cleared = {}\n", record.best_score, record.worlds_cleared));
+            }
+            for (topic, skill) in self.practice.get(key).map(|p| &p.0).into_iter().flatten() {
+                out.push_str(&format!("practice.{} = \"{}\"\n", topic.id(), skill.render()));
+            }
         }
         out
     }
@@ -245,6 +279,42 @@ mod tests {
         assert_eq!(display_name("jean-luc"), Ok("Jean-Luc".to_string()));
         assert_eq!(display_name("#1"), Err(0));
         assert_eq!(display_name("#2"), Err(1));
+    }
+
+    #[test]
+    fn practice_round_trips_and_old_files_load_without_it() {
+        let mut records = Records::default();
+        records.merge("lucía", 900, 2);
+        records.practice_mut("lucía").answered(Topic::TimesTables, 2, false);
+        records.practice_mut("#2").answered(Topic::Gcd, 3, true);
+        let text = records.render();
+        assert!(text.contains("practice.times_tables = \"1 2 0\""), "{text}");
+        assert_eq!(Records::parse(&text), records);
+
+        let old = Records::parse("[\"ana\"]\nbest_score = 70\nworlds_cleared = 2\n");
+        assert_eq!(old.get("ana"), Record { best_score: 70, worlds_cleared: 2 });
+        assert_eq!(old.practice("ana"), Practice::default());
+    }
+
+    #[test]
+    fn damaged_practice_lines_are_skipped() {
+        let text = "[\"ana\"]\npractice.juggling = \"2 0 0\"\npractice.gcd = \"9 9 9\"\npractice.lcm = \"3 1 2\"\n";
+        let practice = Records::parse(text).practice("ana");
+        assert_eq!(practice.0.len(), 1, "{practice:?}");
+        assert_eq!(practice.tier(Topic::Lcm, 1), 3);
+    }
+
+    #[test]
+    fn absorbing_keeps_this_runs_practice_and_adds_the_others() {
+        let mut mine = Records::default();
+        mine.practice_mut("ana").answered(Topic::Division, 2, false);
+        let mut theirs = Records::default();
+        theirs.practice_mut("ana").answered(Topic::Division, 4, true);
+        theirs.practice_mut("ana").answered(Topic::Decimals, 3, true);
+        mine.absorb(&theirs);
+        let practice = mine.practice("ana");
+        assert_eq!(practice.tier(Topic::Division, 1), 1, "this run's view of division wins");
+        assert_eq!(practice.tier(Topic::Decimals, 1), 3, "the other copy's decimals are kept");
     }
 
     #[test]
