@@ -82,11 +82,18 @@ mod tests {
         }
         app.update();
         assert_eq!(players(&mut app), 0);
+    }
 
-        // Requests made while muted are dropped, not saved up for later.
+    #[test]
+    fn requests_made_while_muted_are_dropped() {
+        let mut app = sound_app(true);
+        app.world_mut().write_message(PlaySfx(Sfx::Jump));
+        // Run only `Update`: a full `app.update()` clears old messages in `First`, which
+        // would hide a `play` that skipped reading them while muted.
+        app.world_mut().run_schedule(Update);
         app.world_mut().resource_mut::<Muted>().0 = false;
-        app.update();
-        assert_eq!(players(&mut app), 0);
+        app.world_mut().run_schedule(Update);
+        assert_eq!(players(&mut app), 0, "the muted jump must not play once sound is back on");
     }
 
     #[test]

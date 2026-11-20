@@ -671,12 +671,13 @@ mod tests {
     }
 
     #[test]
-    fn other_rows_leave_the_sound_alone() {
+    fn the_language_row_leaves_the_sound_alone() {
         let mut choices = MenuChoices::default();
         choices.open(Page::Settings, Row::Language);
         let mut app = menu_app(choices);
         tap(&mut app, KeyCode::ArrowRight);
         assert!(!muted(&app), "changing the language must not mute");
+        // The key did act on its own row: English moved on to Spanish.
         assert_eq!(app.world().resource::<Language>().0, crate::i18n::Lang::Es);
     }
 }

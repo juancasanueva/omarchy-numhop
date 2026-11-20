@@ -56,4 +56,9 @@ on every jump makes the game feel alive and makes outcomes clearer.
   those requests, plays one of each effect per frame; the Sound row switches with
   Left/Right/Enter and the Language row leaves it alone. bin/test 73 passed; clippy
   clean; removing the mute check makes `nothing_plays_while_muted` fail.
+- T6 review approved and acknowledged, with two advisories, both fixed: the "dropped while
+  muted" check could not fail (a full app.update clears old messages first), so it is
+  now its own test that runs only Update; the menu test is renamed to
+  `the_language_row_leaves_the_sound_alone`. bin/test 74 passed; clippy clean; making
+  `play` return early while muted without reading makes the new test fail.
 - Pending: the user listens in a real game and tunes any sound that feels off.
