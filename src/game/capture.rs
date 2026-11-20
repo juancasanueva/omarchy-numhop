@@ -28,8 +28,10 @@ enum Step {
     Shot(&'static str),
     /// Type text, one character per key event, as a keyboard would.
     Type(&'static str),
-    /// Put the player right under the first crystal and jump into it.
-    JumpIntoCrystal,
+    /// Put the player on the ground right under the first crystal, standing still.
+    /// The tour then jumps with Space held, as a player would: an unheld jump is cut
+    /// short on purpose and stops just below the crystal.
+    UnderCrystal,
     /// Put the player on the gate key.
     TouchKey,
     /// Press the number of the right option.
@@ -148,8 +150,12 @@ fn full_tour() -> Vec<Step> {
         Release(KeyCode::ArrowRight),
         Wait(0.8),
         Shot("04-running"),
-        JumpIntoCrystal,
-        Wait(1.2),
+        UnderCrystal,
+        Wait(0.2),
+        Press(KeyCode::Space),
+        Wait(0.5),
+        Release(KeyCode::Space),
+        Wait(0.7),
         Shot("05-question"),
         Tap(KeyCode::Digit1),
         Wait(1.0),
@@ -250,10 +256,10 @@ fn drive(
             let path = script.dir.join(format!("{name}.png"));
             commands.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
         }
-        Step::JumpIntoCrystal => {
+        Step::UnderCrystal => {
             if let Ok((mut tf, mut body)) = player.single_mut() {
                 tf.translation = Vec3::new(8.5, 2.0, 0.0);
-                body.vel = Vec2::new(0.0, 14.0);
+                body.vel = Vec2::ZERO;
             }
         }
         Step::TouchKey => {
