@@ -341,7 +341,10 @@ fn addition(tier: u8, rng: &mut Rng) -> Question {
     rng.shuffle(&mut candidates[1..]);
     let (options, correct) = whole_options(answer, &candidates, 0, rng);
     let units = top % 10 + bottom % 10;
-    let explanation = format!(
+    let explanation = if top < 10 && bottom < 10 {
+        format!("{top} + {bottom} = {answer}: write {} in the units and carry 1 to the tens.", answer % 10)
+    } else {
+        format!(
         "Units: {} + {} = {units}, write {} and carry 1. Tens: {} + {} + 1 = {}. Answer: {answer}.",
         top % 10,
         bottom % 10,
@@ -349,7 +352,8 @@ fn addition(tier: u8, rng: &mut Rng) -> Question {
         top / 10,
         bottom / 10,
         top / 10 + bottom / 10 + 1
-    );
+        )
+    };
     Question {
         topic: Topic::Addition,
         tier,

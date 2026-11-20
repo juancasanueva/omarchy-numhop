@@ -1,0 +1,131 @@
+//! Loads every model and font up front, and reports a missing file in the window
+//! instead of starting a game with invisible pieces.
+
+use bevy::asset::LoadState;
+use bevy::prelude::*;
+
+use super::Screen;
+
+#[derive(Resource, Clone)]
+pub struct GameAssets {
+    pub font: Handle<Font>,
+    pub symbols: Handle<Font>,
+    pub hero_pip: Handle<WorldAsset>,
+    pub hero_bolt: Handle<WorldAsset>,
+    pub enemy: Handle<WorldAsset>,
+    pub crystal: Handle<WorldAsset>,
+    pub used: Handle<WorldAsset>,
+    pub brick: Handle<WorldAsset>,
+    pub ground: Handle<WorldAsset>,
+    pub gem: Handle<WorldAsset>,
+    pub key: Handle<WorldAsset>,
+    pub gate: Handle<WorldAsset>,
+    pub flag: Handle<WorldAsset>,
+    pub tree: Handle<WorldAsset>,
+    pub bush: Handle<WorldAsset>,
+    pub cloud: Handle<WorldAsset>,
+}
+
+impl GameAssets {
+    fn all_models(&self) -> [(&'static str, &Handle<WorldAsset>); 14] {
+        [
+            ("hero_pip", &self.hero_pip),
+            ("hero_bolt", &self.hero_bolt),
+            ("enemy_grumble", &self.enemy),
+            ("block_crystal", &self.crystal),
+            ("block_used", &self.used),
+            ("block_brick", &self.brick),
+            ("ground_tile", &self.ground),
+            ("gem", &self.gem),
+            ("key", &self.key),
+            ("gate", &self.gate),
+            ("flag_checkpoint", &self.flag),
+            ("tree", &self.tree),
+            ("bush", &self.bush),
+            ("cloud", &self.cloud),
+        ]
+    }
+}
+
+#[derive(Component)]
+struct LoadingText;
+
+pub fn plugin(app: &mut App) {
+    app.add_systems(Startup, load)
+        .add_systems(Update, wait_for_assets.run_if(in_state(Screen::Loading)));
+}
+
+fn model(server: &AssetServer, name: &str) -> Handle<WorldAsset> {
+    server.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{name}.glb")))
+}
+
+fn load(mut commands: Commands, server: Res<AssetServer>) {
+    let assets = GameAssets {
+        font: server.load("fonts/NotoSans-Bold.ttf"),
+        symbols: server.load("fonts/NotoSansSymbols2-Regular.ttf"),
+        hero_pip: model(&server, "hero_pip"),
+        hero_bolt: model(&server, "hero_bolt"),
+        enemy: model(&server, "enemy_grumble"),
+        crystal: model(&server, "block_crystal"),
+        used: model(&server, "block_used"),
+        brick: model(&server, "block_brick"),
+        ground: model(&server, "ground_tile"),
+        gem: model(&server, "gem"),
+        key: model(&server, "key"),
+        gate: model(&server, "gate"),
+        flag: model(&server, "flag_checkpoint"),
+        tree: model(&server, "tree"),
+        bush: model(&server, "bush"),
+        cloud: model(&server, "cloud"),
+    };
+    commands.insert_resource(assets);
+    commands.spawn((
+        LoadingText,
+        DespawnOnExit(Screen::Loading),
+        Node {
+            width: percent(100),
+            height: percent(100),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        children![(Text::new("Loading…"), TextColor(Color::WHITE))],
+    ));
+}
+
+fn wait_for_assets(
+    assets: Res<GameAssets>,
+    server: Res<AssetServer>,
+    mut next: ResMut<NextState<Screen>>,
+    texts: Query<&Children, With<LoadingText>>,
+    mut writer: Query<&mut Text>,
+) {
+    let mut failed = Vec::new();
+    let mut pending = 0;
+    let fonts = [("NotoSans-Bold.ttf", assets.font.id().untyped()), ("NotoSansSymbols2-Regular.ttf", assets.symbols.id().untyped())];
+    let models = assets.all_models().map(|(n, h)| (n, h.id().untyped()));
+    for (name, id) in fonts.into_iter().chain(models) {
+        match server.get_load_state(id) {
+            Some(LoadState::Loaded) => {}
+            Some(LoadState::Failed(_)) => failed.push(name),
+            _ => pending += 1,
+        }
+    }
+    if !failed.is_empty() {
+        let message = format!(
+            "Could not load: {}\nReinstall numhop, or set NUMHOP_ASSETS to the assets folder.",
+            failed.join(", ")
+        );
+        for children in &texts {
+            for child in children.iter() {
+                if let Ok(mut text) = writer.get_mut(child) {
+                    text.0 = message.clone();
+                }
+            }
+        }
+        return;
+    }
+    if pending == 0 {
+        next.set(Screen::Menu);
+    }
+}
