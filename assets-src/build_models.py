@@ -14,7 +14,7 @@ import math
 
 import bmesh
 import bpy
-from mathutils import Euler, Matrix, Vector
+from mathutils import Euler, Matrix, Quaternion, Vector
 
 PI = math.pi
 
@@ -157,14 +157,23 @@ def trs(loc=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.LocRotScale(Vector(loc), Euler(rot, "XYZ"), Vector(scale))
 
 
+def side(name, s):
+    """Bone name for a left (+Y) or right (-Y) part: `arm.L` or `arm.R`."""
+    return name + (".L" if s > 0 else ".R")
+
+
 # MCP safe mode forbids class definitions, so a model is a plain dict.
 def new_model(name):
     """Start a model that accumulates primitive parts into one bmesh."""
-    return {"name": name, "bm": bmesh.new(), "materials": []}
+    return {"name": name, "bm": bmesh.new(), "materials": [], "groups": []}
 
 
-def add(m, geom, material, matrix=None, smooth=False):
-    """Append one primitive part, transformed by `matrix`, to model `m`."""
+def add(m, geom, material, matrix=None, smooth=False, bone=None):
+    """Append one primitive part, transformed by `matrix`, to model `m`.
+
+    `bone` binds the whole part rigidly to that bone of the character's rig: every
+    vertex gets weight 1 in the vertex group of the same name. Parts are separate
+    pieces, so rigid binding moves them cleanly without automatic weights."""
     if material not in m["materials"]:
         m["materials"].append(material)
     idx = m["materials"].index(material)
@@ -172,7 +181,16 @@ def add(m, geom, material, matrix=None, smooth=False):
     build_geom(tmp, geom)
     if matrix is not None:
         bmesh.ops.transform(tmp, matrix=matrix, verts=tmp.verts)
+    # Adding the deform layer invalidates existing vertex references, so it must
+    # exist before this part's vertices are created.
+    deform = m["bm"].verts.layers.deform.verify() if bone is not None else None
     vmap = {v: m["bm"].verts.new(v.co) for v in tmp.verts}
+    if bone is not None:
+        if bone not in m["groups"]:
+            m["groups"].append(bone)
+        group = m["groups"].index(bone)
+        for v in vmap.values():
+            v[deform][group] = 1.0
     for f in tmp.faces:
         nf = m["bm"].faces.new([vmap[v] for v in f.verts])
         nf.material_index = idx
@@ -196,6 +214,9 @@ def finish(m):
         bpy.context.scene.collection.children.link(coll)
     obj = bpy.data.objects.new(m["name"], mesh)
     coll.objects.link(obj)
+    # Vertex group order must match the deform layer indices written by `add`.
+    for group in m["groups"]:
+        obj.vertex_groups.new(name=group)
     return obj
 
 
@@ -240,32 +261,32 @@ def build_pip():
     pink = mat("pip_pink", "#E8838F", 0.6)
 
     # Body and belly.
-    add(m, sphere(18, 10), orange, trs((0, 0, 0.25), scale=(0.21, 0.19, 0.22)), True)
-    add(m, sphere(14, 8), white, trs((0.1, 0, 0.24), scale=(0.12, 0.14, 0.15)), True)
+    add(m, sphere(18, 10), orange, trs((0, 0, 0.25), scale=(0.21, 0.19, 0.22)), True, "body")
+    add(m, sphere(14, 8), white, trs((0.1, 0, 0.24), scale=(0.12, 0.14, 0.15)), True, "body")
     # Head, snout, nose.
-    add(m, sphere(20, 12), orange, trs((0.04, 0, 0.53), scale=(0.25, 0.24, 0.23)), True)
-    add(m, sphere(14, 8), white, trs((0.22, 0, 0.47), scale=(0.13, 0.12, 0.08)), True)
-    add(m, sphere(10, 6), dark, trs((0.345, 0, 0.495), scale=(0.035, 0.035, 0.03)), True)
+    add(m, sphere(20, 12), orange, trs((0.04, 0, 0.53), scale=(0.25, 0.24, 0.23)), True, "head")
+    add(m, sphere(14, 8), white, trs((0.22, 0, 0.47), scale=(0.13, 0.12, 0.08)), True, "head")
+    add(m, sphere(10, 6), dark, trs((0.345, 0, 0.495), scale=(0.035, 0.035, 0.03)), True, "head")
     # Cheek tufts.
     for s in (-1, 1):
-        add(m, sphere(12, 8), white, trs((0.12, s * 0.17, 0.47), scale=(0.08, 0.06, 0.07)), True)
+        add(m, sphere(12, 8), white, trs((0.12, s * 0.17, 0.47), scale=(0.08, 0.06, 0.07)), True, "head")
     # Eyes with highlights.
     for s in (-1, 1):
-        add(m, sphere(12, 8), black, trs((0.235, s * 0.1, 0.585), scale=(0.035, 0.04, 0.05)), True)
-        add(m, sphere(8, 6), shine, trs((0.262, s * 0.09, 0.605), scale=(0.012, 0.012, 0.014)), True)
+        add(m, sphere(12, 8), black, trs((0.235, s * 0.1, 0.585), scale=(0.035, 0.04, 0.05)), True, "head")
+        add(m, sphere(8, 6), shine, trs((0.262, s * 0.09, 0.605), scale=(0.012, 0.012, 0.014)), True, "head")
     # Ears with pink insides.
     for s in (-1, 1):
         add(m, cyl(4, 0.1, 0.0, 0.22), orange,
-              trs((-0.01, s * 0.13, 0.77), rot=(s * -0.35, -0.1, 0), scale=(1, 0.8, 1)))
+              trs((-0.01, s * 0.13, 0.77), rot=(s * -0.35, -0.1, 0), scale=(1, 0.8, 1)), bone="head")
         add(m, cyl(4, 0.06, 0.0, 0.15), pink,
-              trs((0.02, s * 0.13, 0.755), rot=(s * -0.35, -0.1, 0), scale=(0.5, 0.7, 1)))
+              trs((0.02, s * 0.13, 0.755), rot=(s * -0.35, -0.1, 0), scale=(0.5, 0.7, 1)), bone="head")
     # Arms and feet.
     for s in (-1, 1):
-        add(m, sphere(10, 6), orange, trs((0.11, s * 0.17, 0.27), scale=(0.055, 0.05, 0.06)), True)
-        add(m, sphere(10, 6), dark, trs((0.06, s * 0.1, 0.045), scale=(0.08, 0.06, 0.045)), True)
+        add(m, sphere(10, 6), orange, trs((0.11, s * 0.17, 0.27), scale=(0.055, 0.05, 0.06)), True, side("arm", s))
+        add(m, sphere(10, 6), dark, trs((0.06, s * 0.1, 0.045), scale=(0.08, 0.06, 0.045)), True, side("leg", s))
     # Fluffy tail with dark tip.
-    add(m, sphere(14, 8), orange, trs((-0.24, 0, 0.31), rot=(0, 0.75, 0), scale=(0.13, 0.08, 0.08)), True)
-    add(m, sphere(12, 8), dark, trs((-0.33, 0, 0.42), rot=(0, 0.75, 0), scale=(0.07, 0.06, 0.06)), True)
+    add(m, sphere(14, 8), orange, trs((-0.24, 0, 0.31), rot=(0, 0.75, 0), scale=(0.13, 0.08, 0.08)), True, "tail")
+    add(m, sphere(12, 8), dark, trs((-0.33, 0, 0.42), rot=(0, 0.75, 0), scale=(0.07, 0.06, 0.06)), True, "tail")
     return finish(m)
 
 
@@ -281,29 +302,29 @@ def build_bolt():
 
     # Legs and feet.
     for s in (-1, 1):
-        add(m, cyl(10, 0.05, 0.05, 0.12), grey, trs((0, s * 0.11, 0.12)))
-        add(m, cube(0.02), grey, trs((0.03, s * 0.11, 0.035), scale=(0.18, 0.11, 0.07)))
+        add(m, cyl(10, 0.05, 0.05, 0.12), grey, trs((0, s * 0.11, 0.12)), bone=side("leg", s))
+        add(m, cube(0.02), grey, trs((0.03, s * 0.11, 0.035), scale=(0.18, 0.11, 0.07)), bone=side("leg", s))
     # Body with chest light.
-    add(m, cube(0.05), teal, trs((0, 0, 0.33), scale=(0.44, 0.4, 0.34)))
-    add(m, cube(0.015), orange, trs((0.225, 0, 0.31), scale=(0.02, 0.16, 0.12)))
-    add(m, cyl(10, 0.03, 0.03, 0.02), yellow, trs((0.24, 0, 0.31), rot=(0, PI / 2, 0)))
+    add(m, cube(0.05), teal, trs((0, 0, 0.33), scale=(0.44, 0.4, 0.34)), bone="body")
+    add(m, cube(0.015), orange, trs((0.225, 0, 0.31), scale=(0.02, 0.16, 0.12)), bone="body")
+    add(m, cyl(10, 0.03, 0.03, 0.02), yellow, trs((0.24, 0, 0.31), rot=(0, PI / 2, 0)), bone="body")
     # Arms.
     for s in (-1, 1):
-        add(m, sphere(12, 8), white, trs((0.02, s * 0.235, 0.36), scale=(0.07, 0.06, 0.07)), True)
-        add(m, sphere(10, 6), grey, trs((0.05, s * 0.245, 0.27), scale=(0.05, 0.045, 0.05)), True)
+        add(m, sphere(12, 8), white, trs((0.02, s * 0.235, 0.36), scale=(0.07, 0.06, 0.07)), True, side("arm", s))
+        add(m, sphere(10, 6), grey, trs((0.05, s * 0.245, 0.27), scale=(0.05, 0.045, 0.05)), True, side("arm", s))
     # Neck and head.
-    add(m, cyl(10, 0.06, 0.06, 0.05), grey, trs((0, 0, 0.52)))
-    add(m, cube(0.05), white, trs((0, 0, 0.67), scale=(0.44, 0.42, 0.27)))
+    add(m, cyl(10, 0.06, 0.06, 0.05), grey, trs((0, 0, 0.52)), bone="body")
+    add(m, cube(0.05), white, trs((0, 0, 0.67), scale=(0.44, 0.42, 0.27)), bone="head")
     # Face screen with a round glowing eye.
-    add(m, cube(0.02), screen, trs((0.215, 0, 0.67), scale=(0.03, 0.34, 0.19)))
-    add(m, cyl(16, 0.065, 0.065, 0.02), glow, trs((0.235, 0, 0.67), rot=(0, PI / 2, 0)))
-    add(m, cyl(12, 0.025, 0.025, 0.022), screen, trs((0.24, 0, 0.675), rot=(0, PI / 2, 0)))
+    add(m, cube(0.02), screen, trs((0.215, 0, 0.67), scale=(0.03, 0.34, 0.19)), bone="head")
+    add(m, cyl(16, 0.065, 0.065, 0.02), glow, trs((0.235, 0, 0.67), rot=(0, PI / 2, 0)), bone="head")
+    add(m, cyl(12, 0.025, 0.025, 0.022), screen, trs((0.24, 0, 0.675), rot=(0, PI / 2, 0)), bone="head")
     # Ear bolts.
     for s in (-1, 1):
-        add(m, cyl(10, 0.045, 0.045, 0.04), teal, trs((0, s * 0.225, 0.67), rot=(PI / 2, 0, 0)))
+        add(m, cyl(10, 0.045, 0.045, 0.04), teal, trs((0, s * 0.225, 0.67), rot=(PI / 2, 0, 0)), bone="head")
     # Antenna.
-    add(m, cyl(8, 0.015, 0.015, 0.1), grey, trs((-0.04, 0, 0.84)))
-    add(m, sphere(10, 6), yellow, trs((-0.04, 0, 0.9 - 0.035), scale=(0.035, 0.035, 0.035)), True)
+    add(m, cyl(8, 0.015, 0.015, 0.1), grey, trs((-0.04, 0, 0.84)), bone="head")
+    add(m, sphere(10, 6), yellow, trs((-0.04, 0, 0.9 - 0.035), scale=(0.035, 0.035, 0.035)), True, "head")
     return finish(m)
 
 
@@ -313,28 +334,28 @@ def build_grumble():
     deep = mat("grumble_deep", "#4E1F78", 0.5)
     white = mat("grumble_white", "#FFFFFF", 0.3)
     black = mat("eye_black", "#141016", 0.25)
-    add(m, sphere(20, 12), purple, trs((0, 0, 0.3), scale=(0.4, 0.36, 0.31)), True)
+    add(m, sphere(20, 12), purple, trs((0, 0, 0.3), scale=(0.4, 0.36, 0.31)), True, "body")
     # Spikes along the top ridge, tilted along the body curve, kept off the face.
     for th in (-1.25, -0.75, -0.25, 0.25):
         x = 0.4 * math.sin(th) * 0.93
         z = 0.3 + 0.31 * math.cos(th) * 0.93
-        add(m, cyl(6, 0.085, 0.0, 0.2), deep, trs((x, 0, z), rot=(0, th, 0)))
+        add(m, cyl(6, 0.085, 0.0, 0.2), deep, trs((x, 0, z), rot=(0, th, 0)), bone="body")
     for s in (-1, 1):
         for th in (-0.7, 0.0):
             add(m, cyl(6, 0.07, 0.0, 0.16), deep,
-                trs((0.4 * math.sin(th) * 0.8, s * 0.17, 0.3 + 0.31 * 0.85), rot=(s * -0.55, th, 0)))
+                trs((0.4 * math.sin(th) * 0.8, s * 0.17, 0.3 + 0.31 * 0.85), rot=(s * -0.55, th, 0)), bone="body")
     # Angry eyes and brows.
     for s in (-1, 1):
-        add(m, sphere(12, 8), white, trs((0.3, s * 0.12, 0.36), scale=(0.07, 0.075, 0.085)), True)
-        add(m, sphere(10, 6), black, trs((0.36, s * 0.11, 0.35), scale=(0.035, 0.04, 0.045)), True)
-        add(m, cube(0.01, 1), deep, trs((0.345, s * 0.12, 0.455), rot=(s * 0.5, 0, 0), scale=(0.06, 0.15, 0.045)))
+        add(m, sphere(12, 8), white, trs((0.3, s * 0.12, 0.36), scale=(0.07, 0.075, 0.085)), True, "body")
+        add(m, sphere(10, 6), black, trs((0.36, s * 0.11, 0.35), scale=(0.035, 0.04, 0.045)), True, "body")
+        add(m, cube(0.01, 1), deep, trs((0.345, s * 0.12, 0.455), rot=(s * 0.5, 0, 0), scale=(0.06, 0.15, 0.045)), bone="body")
     # Frown with two little fangs.
-    add(m, sphere(12, 6), deep, trs((0.375, 0, 0.215), scale=(0.035, 0.12, 0.03)), True)
+    add(m, sphere(12, 6), deep, trs((0.375, 0, 0.215), scale=(0.035, 0.12, 0.03)), True, "body")
     for s in (-1, 1):
-        add(m, cyl(6, 0.025, 0.0, 0.055), white, trs((0.395, s * 0.06, 0.225)))
+        add(m, cyl(6, 0.025, 0.0, 0.055), white, trs((0.395, s * 0.06, 0.225)), bone="body")
     # Feet.
     for s in (-1, 1):
-        add(m, sphere(10, 6), deep, trs((0.08, s * 0.17, 0.035), scale=(0.1, 0.07, 0.04)), True)
+        add(m, sphere(10, 6), deep, trs((0.08, s * 0.17, 0.035), scale=(0.1, 0.07, 0.04)), True, side("foot", s))
     return finish(m)
 
 
@@ -524,6 +545,243 @@ def build_cloud():
     return finish(m)
 
 
+# ---------------------------------------------------------------- rigs and clips
+#
+# Characters get a small armature. Parts were bound rigidly in `add`, so posing a
+# bone moves its parts as solid pieces. Clips are keyed in armature-space terms
+# (rotate about world Y = swing forward/back, about Z = wag, about X = roll) and
+# converted to each bone's local space, so the numbers read the same for every bone.
+# Each clip becomes an NLA track, which the glTF exporter writes as a named
+# animation: `walk` (1 s loop), `idle` (2 s loop) and `jump` (held pose).
+
+# (bone, head, tail, parent) in Blender coordinates, character facing +X.
+RIG_PIP = [
+    ("root", (0, 0, 0), (0, 0, 0.1), None),
+    ("body", (0, 0, 0.1), (0, 0, 0.38), "root"),
+    ("head", (0.04, 0, 0.38), (0.04, 0, 0.72), "body"),
+    ("arm.L", (0.09, 0.15, 0.33), (0.11, 0.18, 0.22), "body"),
+    ("arm.R", (0.09, -0.15, 0.33), (0.11, -0.18, 0.22), "body"),
+    ("leg.L", (0.05, 0.1, 0.16), (0.06, 0.1, 0.02), "root"),
+    ("leg.R", (0.05, -0.1, 0.16), (0.06, -0.1, 0.02), "root"),
+    ("tail", (-0.18, 0, 0.28), (-0.33, 0, 0.42), "body"),
+]
+
+RIG_BOLT = [
+    ("root", (0, 0, 0), (0, 0, 0.1), None),
+    ("body", (0, 0, 0.18), (0, 0, 0.5), "root"),
+    ("head", (0, 0, 0.52), (0, 0, 0.9), "body"),
+    ("arm.L", (0.02, 0.235, 0.38), (0.05, 0.245, 0.25), "body"),
+    ("arm.R", (0.02, -0.235, 0.38), (0.05, -0.245, 0.25), "body"),
+    ("leg.L", (0, 0.11, 0.2), (0.03, 0.11, 0.0), "root"),
+    ("leg.R", (0, -0.11, 0.2), (0.03, -0.11, 0.0), "root"),
+]
+
+RIG_GRUMBLE = [
+    ("root", (0, 0, 0), (0, 0, 0.1), None),
+    ("body", (0, 0, 0.02), (0, 0, 0.62), "root"),
+    ("foot.L", (0.08, 0.17, 0.08), (0.12, 0.17, 0.0), "root"),
+    ("foot.R", (0.08, -0.17, 0.08), (0.12, -0.17, 0.0), "root"),
+]
+
+FPS = 24
+
+
+def make_armature(mesh_obj, spec):
+    """Create an armature for `mesh_obj` and deform the mesh with it."""
+    data = bpy.data.armatures.new(mesh_obj.name + "_rig")
+    arm = bpy.data.objects.new(mesh_obj.name + "_rig", data)
+    for coll in mesh_obj.users_collection:
+        coll.objects.link(arm)
+    bpy.context.view_layer.objects.active = arm
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    for name, head, tail, parent in spec:
+        eb = data.edit_bones.new(name)
+        eb.head = Vector(head)
+        eb.tail = Vector(tail)
+        eb.roll = 0.0
+        if parent is not None:
+            eb.parent = data.edit_bones[parent]
+    bpy.ops.object.mode_set(mode="OBJECT")
+    mesh_obj.parent = arm
+    mod = mesh_obj.modifiers.new("rig", "ARMATURE")
+    mod.object = arm
+    return arm
+
+
+def _axis(a):
+    return {"x": Vector((1, 0, 0)), "y": Vector((0, 1, 0)), "z": Vector((0, 0, 1))}[a]
+
+
+def pose_key(arm, frame, poses):
+    """Key every bone at `frame`. `poses` maps bone -> dict with optional
+    `rot` [(axis, radians), ...] in armature axes, `loc` (x, y, z) in armature
+    units, and `scale` (across, along, across) relative to the bone."""
+    for pb in arm.pose.bones:
+        pose = poses.get(pb.name, {})
+        rest = pb.bone.matrix_local.to_3x3()
+        q = Quaternion()
+        for axis, angle in pose.get("rot", []):
+            q = Quaternion(_axis(axis), angle) @ q
+        # A rotation in armature axes, expressed in the bone's own rest frame.
+        pb.rotation_mode = "QUATERNION"
+        pb.rotation_quaternion = (rest.inverted() @ q.to_matrix() @ rest).to_quaternion()
+        pb.location = rest.inverted() @ Vector(pose.get("loc", (0, 0, 0)))
+        across, along, across2 = pose.get("scale", (1, 1, 1))
+        pb.scale = (across, along, across2)
+        for path in ("rotation_quaternion", "location", "scale"):
+            pb.keyframe_insert(data_path=path, frame=frame, group=pb.name)
+
+
+def new_clip(arm, name):
+    action = bpy.data.actions.new(arm.name + "_" + name)
+    if arm.animation_data is None:
+        arm.animation_data_create()
+    arm.animation_data.action = action
+    return action
+
+
+def stash_clip(arm, action, name):
+    """Move the clip into its own NLA track, named as the glTF animation."""
+    ad = arm.animation_data
+    ad.action = None
+    track = ad.nla_tracks.new()
+    track.name = name
+    start = int(action.frame_range[0])
+    track.strips.new(name, start, action)
+
+
+def biped_clips(arm, legs, arms, bob, lean, tail):
+    """Walk, idle and jump for a two-legged hero. `tail` is False for Bolt."""
+    # Walk: legs and arms swing in opposition, the body dips twice per stride.
+    action = new_clip(arm, "walk")
+    for f in range(0, FPS + 1, 2):
+        ph = 2 * PI * f / FPS
+        sw = math.sin(ph)
+        poses = {
+            "leg.L": {"rot": [("y", -legs * sw)]},
+            "leg.R": {"rot": [("y", legs * sw)]},
+            "arm.L": {"rot": [("y", arms * sw)]},
+            "arm.R": {"rot": [("y", -arms * sw)]},
+            "body": {"rot": [("y", lean), ("x", 0.04 * sw)], "loc": (0, 0, bob * abs(math.sin(ph)))},
+            "head": {"rot": [("y", -0.06 * math.sin(2 * ph))]},
+        }
+        if tail:
+            poses["tail"] = {"rot": [("z", 0.35 * sw)]}
+        pose_key(arm, f, poses)
+    stash_clip(arm, action, "walk")
+
+    # Idle: slow breathing, a little head tilt and tail sway.
+    action = new_clip(arm, "idle")
+    for f in range(0, 2 * FPS + 1, 4):
+        ph = 2 * PI * f / (2 * FPS)
+        sw = math.sin(ph)
+        poses = {
+            "body": {"scale": (1 - 0.01 * sw, 1 + 0.03 * sw, 1 - 0.01 * sw)},
+            "head": {"rot": [("x", 0.05 * sw), ("y", 0.03 * math.cos(ph))]},
+            "arm.L": {"rot": [("y", 0.08 * sw)]},
+            "arm.R": {"rot": [("y", 0.08 * sw)]},
+        }
+        if tail:
+            poses["tail"] = {"rot": [("z", 0.25 * sw)]}
+        pose_key(arm, f, poses)
+    stash_clip(arm, action, "idle")
+
+    # Jump: a leap pose, one leg forward and one back, arms thrown up.
+    action = new_clip(arm, "jump")
+    for f in (0, 6, 12):
+        k = 1.0 if f != 6 else 1.08
+        poses = {
+            "leg.L": {"rot": [("y", -0.65 * k)]},
+            "leg.R": {"rot": [("y", 0.45 * k)]},
+            "arm.L": {"rot": [("y", -2.2 * k)]},
+            "arm.R": {"rot": [("y", -2.0 * k)]},
+            "body": {"rot": [("y", 0.12)]},
+            "head": {"rot": [("y", -0.1)]},
+        }
+        if tail:
+            poses["tail"] = {"rot": [("y", 0.5 * k)]}
+        pose_key(arm, f, poses)
+    stash_clip(arm, action, "jump")
+
+
+def grumble_clips(arm):
+    """A legless blob: it hops and squashes, with its feet shuffling."""
+    action = new_clip(arm, "walk")
+    for f in range(0, FPS + 1, 2):
+        ph = 2 * PI * f / FPS
+        up = abs(math.sin(ph))
+        sw = math.sin(ph)
+        pose_key(arm, f, {
+            "body": {
+                "loc": (0, 0, 0.06 * up),
+                "scale": (1.07 - 0.07 * up, 0.9 + 0.12 * up, 1.07 - 0.07 * up),
+                "rot": [("y", 0.06 * math.sin(2 * ph))],
+            },
+            "foot.L": {"rot": [("y", -0.45 * sw)]},
+            "foot.R": {"rot": [("y", 0.45 * sw)]},
+        })
+    stash_clip(arm, action, "walk")
+
+    action = new_clip(arm, "idle")
+    for f in range(0, 2 * FPS + 1, 4):
+        sw = math.sin(2 * PI * f / (2 * FPS))
+        pose_key(arm, f, {"body": {"scale": (1 + 0.03 * sw, 1 - 0.04 * sw, 1 + 0.03 * sw)}})
+    stash_clip(arm, action, "idle")
+
+
+def rig_character(obj):
+    """Rig a character mesh and author its clips. Returns the armature."""
+    if obj.name == "hero_pip":
+        arm = make_armature(obj, RIG_PIP)
+        biped_clips(arm, legs=0.6, arms=0.55, bob=0.03, lean=0.08, tail=True)
+    elif obj.name == "hero_bolt":
+        arm = make_armature(obj, RIG_BOLT)
+        biped_clips(arm, legs=0.45, arms=0.6, bob=0.02, lean=0.05, tail=False)
+    else:
+        arm = make_armature(obj, RIG_GRUMBLE)
+        grumble_clips(arm)
+    # Leave the rest pose showing in the .blend.
+    for pb in arm.pose.bones:
+        pb.rotation_quaternion = Quaternion()
+        pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
+    return arm
+
+
+RIGGED = {"hero_pip", "hero_bolt", "enemy_grumble"}
+
+
+def export_rigged(arm, mesh_obj, path):
+    """Export a character with its skin and every NLA track as an animation."""
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    saved = arm.location.copy()
+    arm.location = (0, 0, 0)
+    arm.select_set(True)
+    mesh_obj.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.export_scene.gltf(
+        filepath=path,
+        use_selection=True,
+        export_format="GLB",
+        export_yup=True,
+        # Applying modifiers would bake the armature away; there are no others.
+        export_apply=False,
+        export_skins=True,
+        export_animations=True,
+        export_animation_mode="NLA_TRACKS",
+        export_def_bones=False,
+        export_force_sampling=True,
+        export_reset_pose_bones=True,
+    )
+    arm.location = saved
+    arm.select_set(False)
+    mesh_obj.select_set(False)
+
+
 BUILDERS = [
     build_pip, build_bolt, build_grumble, build_block_crystal, build_block_used,
     build_block_brick, build_ground_tile, build_gem, build_key, build_gate,
@@ -536,6 +794,10 @@ BUILDERS = [
 def clear_scene():
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
+    for action in list(bpy.data.actions):
+        bpy.data.actions.remove(action)
+    for armature in list(bpy.data.armatures):
+        bpy.data.armatures.remove(armature)
     for coll in list(bpy.data.collections):
         bpy.data.collections.remove(coll)
     for mesh in list(bpy.data.meshes):
@@ -593,12 +855,20 @@ def build_all(export_dir=None, layout_spacing=3.5):
         objects.append(obj)
     report = []
     for i, obj in enumerate(objects):
+        arm = rig_character(obj) if obj.name in RIGGED else None
         if export_dir:
             path = export_dir.rstrip("/") + "/" + obj.name + ".glb"
-            export_glb(obj, path)
+            if arm is not None:
+                export_rigged(arm, obj, path)
+            else:
+                export_glb(obj, path)
         lo, hi = bounds(obj)
         tris = sum(len(p.vertices) - 2 for p in obj.data.polygons)
         report.append((obj.name, lo, hi, tris))
         # Spread the models out in the .blend for browsing; exports use origin.
-        obj.location = ((i % 7) * layout_spacing, (i // 7) * layout_spacing, 0)
+        spot = ((i % 7) * layout_spacing, (i // 7) * layout_spacing, 0)
+        if arm is not None:
+            arm.location = spot
+        else:
+            obj.location = spot
     return report
