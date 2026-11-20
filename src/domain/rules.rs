@@ -41,8 +41,26 @@ impl Character {
     }
 }
 
+/// The longest name a player can type, so it fits on the HUD and the menu.
+pub const MAX_NAME_CHARS: usize = 12;
+
+/// Letters (with accents and ñ), digits, spaces, hyphens and apostrophes. Quotes and
+/// backslashes are left out, so a name can be saved as-is in the settings file.
+pub fn name_char_allowed(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, ' ' | '-' | '\'')
+}
+
+/// A typed name made safe to show and save: allowed characters only, spaces collapsed,
+/// trimmed, and cut to [`MAX_NAME_CHARS`].
+pub fn clean_name(raw: &str) -> String {
+    let kept: String = raw.chars().filter(|c| name_char_allowed(*c)).collect();
+    let joined = kept.split_whitespace().collect::<Vec<_>>().join(" ");
+    joined.chars().take(MAX_NAME_CHARS).collect::<String>().trim_end().to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayerConfig {
+    /// The name shown on banners, the HUD and the results.
     pub label: String,
     pub age: AgeLevel,
     pub character: Character,
@@ -335,5 +353,18 @@ mod tests {
         assert!(m.gem_collected(4));
         assert!(!m.gem_collected(4));
         assert_eq!(m.player().gems, 1);
+    }
+
+    #[test]
+    fn names_keep_letters_accents_and_spaces() {
+        assert_eq!(clean_name("  Lucía  "), "Lucía");
+        assert_eq!(clean_name("Ana   María"), "Ana María");
+        assert_eq!(clean_name("Íñigo"), "Íñigo");
+        assert_eq!(clean_name("Jo-2 O'Neil"), "Jo-2 O'Neil", "hyphens, digits and apostrophes stay");
+        assert_eq!(clean_name("Bob\"\\\n"), "Bob");
+        // Cut at 12 characters, and a space left at the cut is trimmed.
+        assert_eq!(clean_name("Maximiliano Alejandro"), "Maximiliano");
+        assert_eq!(clean_name("   "), "");
+        assert!(clean_name("ñññññññññññññññ").chars().count() <= MAX_NAME_CHARS);
     }
 }

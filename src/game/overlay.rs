@@ -6,6 +6,7 @@
 use bevy::prelude::*;
 
 use super::assets::GameAssets;
+use super::menu::MenuChoices;
 use super::theme::{AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
 use super::{Game, Language, Screen};
@@ -33,6 +34,7 @@ pub fn no_overlay(overlay: Res<Overlay>) -> bool {
 
 fn toggle(
     keys: Res<ButtonInput<KeyCode>>,
+    menu: Res<MenuChoices>,
     screen: Res<State<Screen>>,
     game: Option<Res<Game>>,
     mut overlay: ResMut<Overlay>,
@@ -40,6 +42,10 @@ fn toggle(
     mut exit: MessageWriter<AppExit>,
     mut next: ResMut<NextState<Screen>>,
 ) {
+    // Q and ? are letters while a name is being typed.
+    if menu.typing() {
+        return;
+    }
     let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
     let help_pressed = keys.just_pressed(KeyCode::F1) || (keys.just_pressed(KeyCode::Slash) && shift);
     let mut wanted = *overlay;

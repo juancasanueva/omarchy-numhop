@@ -58,25 +58,41 @@ impl Language {
     }
 }
 
-/// `NUMHOP_LANG` picks the language for one run without touching saved settings, which
-/// keeps scripted screenshots and tests from rewriting the player's choice.
-fn initial_language() -> (Lang, bool) {
-    if let Some(lang) = std::env::var("NUMHOP_LANG").ok().and_then(|c| Lang::from_code(&c)) {
-        return (lang, false);
+/// The names the players typed in the menu; empty means "Player 1" or "Player 2".
+/// Saved with the language.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlayerNames(pub [String; 2]);
+
+/// The settings to start with, and whether changes are saved. `NUMHOP_LANG` picks the
+/// language for one run without touching saved settings, and scripted screenshots
+/// (`NUMHOP_CAPTURE`) start with blank names, so neither rewrites the player's choices.
+fn initial_settings() -> (Settings, bool) {
+    let mut settings = settings::load_or_default();
+    let mut persist = true;
+    if std::env::var_os("NUMHOP_CAPTURE").is_some() {
+        settings.names = Default::default();
+        persist = false;
     }
-    let persist = std::env::var_os("NUMHOP_CAPTURE").is_none();
-    (settings::load_or_default().lang, persist)
+    if let Some(lang) = std::env::var("NUMHOP_LANG").ok().and_then(|c| Lang::from_code(&c)) {
+        settings.lang = lang;
+        persist = false;
+    }
+    (settings, persist)
 }
 
 #[derive(Resource)]
-struct PersistLanguage(bool);
+struct PersistSettings(bool);
 
-fn save_language(language: Res<Language>, persist: Res<PersistLanguage>) {
-    if !persist.0 || language.is_added() {
+fn save_settings(language: Res<Language>, names: Res<PlayerNames>, persist: Res<PersistSettings>) {
+    if !persist.0 || language.is_added() || names.is_added() {
         return;
     }
+    let settings = Settings {
+        lang: language.0,
+        names: names.0.clone(),
+    };
     if let Some(path) = settings::settings_path()
-        && let Err(err) = settings::save(&path, &Settings { lang: language.0 })
+        && let Err(err) = settings::save(&path, &settings)
     {
         warn!("could not save settings to {}: {err}", path.display());
     }
@@ -87,7 +103,7 @@ fn save_language(language: Res<Language>, persist: Res<PersistLanguage>) {
 pub struct Game(pub Match);
 
 pub fn run() -> AppExit {
-    let (lang, persist) = initial_language();
+    let (settings, persist) = initial_settings();
     App::new()
         .add_plugins(
             DefaultPlugins
@@ -109,9 +125,13 @@ pub fn run() -> AppExit {
         .insert_resource(Worlds(levels::worlds()))
         .insert_resource(GameRng(Rng::from_time()))
         .insert_resource(ClearColor(Color::srgb(0.53, 0.78, 0.96)))
-        .insert_resource(Language(lang))
-        .insert_resource(PersistLanguage(persist))
-        .add_systems(Update, save_language.run_if(resource_changed::<Language>))
+        .insert_resource(Language(settings.lang))
+        .insert_resource(PlayerNames(settings.names))
+        .insert_resource(PersistSettings(persist))
+        .add_systems(
+            Update,
+            save_settings.run_if(resource_changed::<Language>.or_else(resource_changed::<PlayerNames>)),
+        )
         .add_plugins((
             assets::plugin,
             animation::plugin,

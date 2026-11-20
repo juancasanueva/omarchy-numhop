@@ -6,8 +6,11 @@
 
 use std::path::PathBuf;
 
+use bevy::input::ButtonState;
 use bevy::input::InputSystems;
+use bevy::input::keyboard::{Key, KeyboardInput, NativeKeyCode};
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use super::Screen;
@@ -23,6 +26,8 @@ enum Step {
     Press(KeyCode),
     Release(KeyCode),
     Shot(&'static str),
+    /// Type text, one character per key event, as a keyboard would.
+    Type(&'static str),
     /// Put the player right under the first crystal and jump into it.
     JumpIntoCrystal,
     /// Put the player on the gate key.
@@ -89,6 +94,18 @@ fn full_tour() -> Vec<Step> {
         Tap(KeyCode::ArrowRight),
         Wait(0.6),
         Shot("02-menu-two-players"),
+        // Type a name for the first player, then go back to the first row.
+        Tap(KeyCode::ArrowDown),
+        Wait(0.2),
+        Tap(KeyCode::Enter),
+        Wait(0.2),
+        Type("Lucía"),
+        Wait(0.4),
+        Shot("02a-typing-name"),
+        Tap(KeyCode::Enter),
+        Wait(0.2),
+        Tap(KeyCode::ArrowUp),
+        Wait(0.2),
         // Up twice wraps from the first row to Settings, just above Start.
         Tap(KeyCode::ArrowUp),
         Wait(0.2),
@@ -172,6 +189,8 @@ fn drive(
     mut player: Query<(&mut Transform, &mut Body), With<Player>>,
     keys_q: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
     asking: Option<Res<Asking>>,
+    mut typed: MessageWriter<KeyboardInput>,
+    window: Query<Entity, With<PrimaryWindow>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     // A tap lasts exactly one frame.
@@ -196,6 +215,20 @@ fn drive(
             if advance {
                 keys.release(k);
                 script.held = None;
+            }
+        }
+        Step::Type(text) => {
+            if let Ok(window) = window.single() {
+                for c in text.chars() {
+                    typed.write(KeyboardInput {
+                        key_code: KeyCode::Unidentified(NativeKeyCode::Unidentified),
+                        logical_key: Key::Character(c.to_string().into()),
+                        state: ButtonState::Pressed,
+                        text: Some(c.to_string().into()),
+                        repeat: false,
+                        window,
+                    });
+                }
             }
         }
         Step::Press(k) => keys.press(k),

@@ -19,6 +19,9 @@ blends between them as they move, and speeds the walk up as they run.
 
 - **One or two players.** Each starts with three lives. Solo players earn an extra
   life for every world cleared.
+- **Your own name.** In the menu, pick a player's name row and press Enter to type
+  it (up to 12 letters, accents and ñ included); Enter keeps it, Esc cancels. Names
+  show on the banners, the HUD and the results, and are remembered for next time.
 - **Crystal blocks**: jump into one from below for a question. Right: +250 points
   and 3 gems.
 - **The key** before each gate asks the final question of the world. Right:
@@ -57,7 +60,7 @@ Hyprland window rounding.
 
 numhop speaks English and Spanish (Español). Pick one under **Settings** in the
 main menu; the menu switches at once and the choice is saved to
-`~/.config/numhop/settings.toml`. On first run it follows Omarchy's language
+`~/.config/numhop/settings.toml`, together with the players' names. On first run it follows Omarchy's language
 (`~/.config/omarchy/language`), then your system locale, then English.
 `NUMHOP_LANG=es numhop` picks a language for one run without saving it.
 

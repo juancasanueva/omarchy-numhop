@@ -15,6 +15,8 @@ pub static STRINGS: Strings = Strings {
     language: "Idioma",
     back: "Volver",
     settings_hint: "Izquierda/Derecha cambiar · Esc volver",
+    name_placeholder: "Escribe un nombre",
+    name_hint: "Escribe un nombre · Retroceso borrar · Enter aceptar · Esc cancelar",
 
     age_six: "6 años: sumas y restas",
     age_eight: "8 años: restas y tablas",

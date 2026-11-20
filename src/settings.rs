@@ -1,17 +1,21 @@
 //! Player settings, kept in `~/.config/numhop/settings.toml`.
 //!
-//! The file is tiny and flat (`language = "es"`), so it is read line by line rather than
-//! pulling in a TOML parser. It is saved atomically: written beside the target, then
+//! The file is tiny and flat (`language = "es"`, `player1 = "Lucía"`), so it is read
+//! line by line rather than pulling in a TOML parser. Names are cleaned on the way in and
+//! out, so they never hold a quote or a backslash. It is saved atomically: written beside the target, then
 //! renamed over it, so a crash never leaves a half-written file.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::domain::rules::clean_name;
 use crate::i18n::Lang;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Settings {
     pub lang: Lang,
+    /// The names the players typed; empty means "Player 1" or "Player 2".
+    pub names: [String; 2],
 }
 
 /// `$XDG_CONFIG_HOME/numhop/settings.toml`, or `~/.config/numhop/settings.toml`.
@@ -23,19 +27,28 @@ pub fn settings_path() -> Option<PathBuf> {
     Some(base.join("numhop").join("settings.toml"))
 }
 
-pub fn parse(text: &str) -> Option<Settings> {
-    let lang = text.lines().find_map(|line| {
+/// The value of `key = "value"` lines, without the quotes.
+fn value<'a>(text: &'a str, wanted: &str) -> Option<&'a str> {
+    text.lines().find_map(|line| {
         let (key, value) = line.split_once('=')?;
-        if key.trim() != "language" {
-            return None;
-        }
-        Lang::from_code(value.trim().trim_matches('"'))
-    })?;
-    Some(Settings { lang })
+        (key.trim() == wanted).then(|| value.trim().trim_matches('"'))
+    })
+}
+
+pub fn parse(text: &str) -> Option<Settings> {
+    let lang = value(text, "language").and_then(Lang::from_code)?;
+    let name = |key| value(text, key).map(clean_name).unwrap_or_default();
+    Some(Settings { lang, names: [name("player1"), name("player2")] })
 }
 
 pub fn render(settings: &Settings) -> String {
-    format!("# numhop settings\nlanguage = \"{}\"\n", settings.lang.code())
+    let [one, two] = &settings.names;
+    format!(
+        "# numhop settings\nlanguage = \"{}\"\nplayer1 = \"{}\"\nplayer2 = \"{}\"\n",
+        settings.lang.code(),
+        clean_name(one),
+        clean_name(two)
+    )
 }
 
 pub fn load(path: &Path) -> Option<Settings> {
@@ -74,6 +87,7 @@ pub fn load_or_default() -> Settings {
         .or_else(|| std::env::var("LANG").ok());
     Settings {
         lang: default_lang(omarchy.as_deref(), locale.as_deref()),
+        names: Default::default(),
     }
 }
 
@@ -91,8 +105,9 @@ mod tests {
     fn round_trips_through_a_file() {
         let dir = temp_dir("roundtrip");
         let path = dir.join("numhop/settings.toml");
-        save(&path, &Settings { lang: Lang::Es }).unwrap();
-        assert_eq!(load(&path), Some(Settings { lang: Lang::Es }));
+        let settings = Settings { lang: Lang::Es, names: ["Lucía".into(), "Íñigo".into()] };
+        save(&path, &settings).unwrap();
+        assert_eq!(load(&path), Some(settings));
         assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -101,7 +116,15 @@ mod tests {
     fn unknown_or_missing_language_is_ignored() {
         assert_eq!(parse("language = \"klingon\""), None);
         assert_eq!(parse("# empty"), None);
-        assert_eq!(parse("language = \"es\""), Some(Settings { lang: Lang::Es }));
+        assert_eq!(parse("language = \"es\""), Some(Settings { lang: Lang::Es, names: Default::default() }));
+    }
+
+    #[test]
+    fn names_are_cleaned_when_read_and_written() {
+        let settings = parse("language = \"en\"\nplayer1 = \"  Ana   María \"\nplayer2 = \"Bob\\\\\"").unwrap();
+        assert_eq!(settings.names, ["Ana María".to_string(), "Bob".to_string()]);
+        let messy = Settings { lang: Lang::En, names: ["Zoe\"".into(), String::new()] };
+        assert_eq!(render(&messy), "# numhop settings\nlanguage = \"en\"\nplayer1 = \"Zoe\"\nplayer2 = \"\"\n");
     }
 
     #[test]
