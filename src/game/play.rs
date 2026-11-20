@@ -17,7 +17,9 @@ use super::question::{AskKind, AskRequest};
 use super::{Game, Language, Screen, Worlds};
 
 const GRAVITY: f32 = 34.0;
-const JUMP_SPEED: f32 = 14.6;
+/// A held jump rises JUMP_SPEED² / (2 × GRAVITY) ≈ 3.5 tiles. The meadow's first
+/// platforms stand 3 tiles above the ground, so children get some margin.
+const JUMP_SPEED: f32 = 15.4;
 const MAX_FALL: f32 = 22.0;
 const RUN_SPEED: f32 = 6.2;
 const GROUND_ACCEL: f32 = 48.0;
@@ -66,18 +68,27 @@ pub struct Contacts {
     pub landed: bool,
 }
 
-/// Moves a body through the tile grid one axis at a time, so it slides along walls
-/// and floors instead of sticking to them.
-pub fn move_body(pos: &mut Vec3, body: &mut Body, dt: f32, grid: &Grid) -> Contacts {
+/// One frame of falling: the new vertical speed, and how far the body rises meanwhile
+/// (negative when it drops). The rise uses the average of the speeds at the start and
+/// end of the frame, which is exact under constant gravity, so a jump reaches the same
+/// height at any frame rate.
+fn fall(vel_y: f32, gravity: f32, dt: f32) -> (f32, f32) {
+    let next = (vel_y - gravity * dt).max(-MAX_FALL);
+    (next, (vel_y + next) / 2.0 * dt)
+}
+
+/// Moves a body by `step` through the tile grid one axis at a time, so it slides
+/// along walls and floors instead of sticking to them.
+pub fn move_body(pos: &mut Vec3, body: &mut Body, step: Vec2, grid: &Grid) -> Contacts {
     let mut contacts = Contacts::default();
     let size = body.half * 2.0;
 
-    pos.x += body.vel.x * dt;
+    pos.x += step.x;
     for (col, row) in cells(pos, size) {
         if grid.solid(col, row) {
-            if body.vel.x > 0.0 {
+            if step.x > 0.0 {
                 pos.x = col as f32 - body.half.x - EPS;
-            } else if body.vel.x < 0.0 {
+            } else if step.x < 0.0 {
                 pos.x = col as f32 + 1.0 + body.half.x + EPS;
             }
             body.vel.x = 0.0;
@@ -87,11 +98,13 @@ pub fn move_body(pos: &mut Vec3, body: &mut Body, dt: f32, grid: &Grid) -> Conta
     pos.x = pos.x.max(body.half.x);
     pos.x = pos.x.min(grid.width as f32 - body.half.x);
 
-    pos.y += body.vel.y * dt;
+    // The step, not the speed, says which way the body went: at the top of a jump the
+    // body can still rise this frame while its speed has already turned downward.
+    pos.y += step.y;
     let mut landed = false;
     for (col, row) in cells(pos, size) {
         if grid.solid(col, row) {
-            if body.vel.y > 0.0 {
+            if step.y > 0.0 {
                 pos.y = row as f32 - size.y - EPS;
                 contacts.head.push((col, row));
             } else {
@@ -163,11 +176,13 @@ fn player_control(
     if body.vel.y > 0.0 && !keys.any_pressed(jump_keys) {
         gravity *= 2.2;
     }
-    body.vel.y = (body.vel.y - gravity * dt).max(-MAX_FALL);
+    let (vel_y, rise) = fall(body.vel.y, gravity, dt);
+    body.vel.y = vel_y;
 
     let was_airborne = !body.on_ground;
     let mut pos = tf.translation;
-    let contacts = move_body(&mut pos, &mut body, dt, &grid);
+    let step = Vec2::new(body.vel.x * dt, rise);
+    let contacts = move_body(&mut pos, &mut body, step, &grid);
     tf.translation = pos;
     if contacts.landed && was_airborne {
         p.squash = 0.2;
@@ -230,9 +245,11 @@ fn enemy_ai(
             continue;
         }
         body.vel.x = enemy.dir * ENEMY_SPEED;
-        body.vel.y = (body.vel.y - GRAVITY * dt).max(-MAX_FALL);
+        let (vel_y, rise) = fall(body.vel.y, GRAVITY, dt);
+        body.vel.y = vel_y;
         let mut pos = tf.translation;
-        let contacts = move_body(&mut pos, &mut body, dt, &grid);
+        let step = Vec2::new(body.vel.x * dt, rise);
+        let contacts = move_body(&mut pos, &mut body, step, &grid);
         tf.translation = pos;
 
         // Turn at walls and at ledges, so Grumbles patrol instead of falling off.
@@ -436,4 +453,91 @@ fn camera_follow(
     }
     let look = Vec3::new(cam.translation.x, cam.translation.y - 1.6, 0.0);
     cam.look_at(look, Vec3::Y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::levels::Tile;
+
+    const FRAME_RATES: [f32; 3] = [30.0, 60.0, 144.0];
+
+    /// The highest a held jump lifts the feet, frame by frame at `fps`.
+    fn held_jump_peak(fps: f32) -> f32 {
+        let dt = 1.0 / fps;
+        let (mut vel, mut height, mut peak) = (JUMP_SPEED, 0.0_f32, 0.0_f32);
+        while vel > -JUMP_SPEED {
+            let (next, rise) = fall(vel, GRAVITY, dt);
+            vel = next;
+            height += rise;
+            peak = peak.max(height);
+        }
+        peak
+    }
+
+    #[test]
+    fn a_held_jump_reaches_the_same_height_at_any_frame_rate() {
+        let exact = JUMP_SPEED * JUMP_SPEED / (2.0 * GRAVITY);
+        for fps in FRAME_RATES {
+            let peak = held_jump_peak(fps);
+            assert!((peak - exact).abs() < 0.01, "{fps} fps peaks at {peak}, not {exact}");
+        }
+    }
+
+    #[test]
+    fn a_held_jump_clears_three_tiles_with_room_to_spare() {
+        for fps in FRAME_RATES {
+            assert!(held_jump_peak(fps) > 3.4, "{fps} fps");
+        }
+    }
+
+    /// Ground with its top at y = 2, and a three-block ledge whose top is at y = 5 over
+    /// columns 11 to 13, like the first platforms of Sunny Meadow.
+    fn meadow_start() -> Grid {
+        let mut grid = Grid { width: 30, ..default() };
+        for col in 0..30 {
+            grid.solids.insert((col, 0), Tile::Ground);
+            grid.solids.insert((col, 1), Tile::Ground);
+        }
+        for col in 11..=13 {
+            grid.solids.insert((col, 4), Tile::Block);
+        }
+        grid
+    }
+
+    #[test]
+    fn a_running_jump_lands_on_a_ledge_three_tiles_up_at_any_frame_rate() {
+        let grid = meadow_start();
+        for fps in FRAME_RATES {
+            let dt = 1.0 / fps;
+            let mut pos = Vec3::new(8.0, 2.0, 0.0);
+            let mut body = Body { vel: Vec2::new(RUN_SPEED, JUMP_SPEED), half: Vec2::new(0.28, 0.42), on_ground: false };
+            let mut landed_on = None;
+            for _ in 0..(fps as usize) {
+                let (vel_y, rise) = fall(body.vel.y, GRAVITY, dt);
+                body.vel.y = vel_y;
+                let step = Vec2::new(body.vel.x * dt, rise);
+                let contacts = move_body(&mut pos, &mut body, step, &grid);
+                if contacts.landed {
+                    landed_on = Some(pos.y);
+                    break;
+                }
+            }
+            assert_eq!(landed_on, Some(5.0), "{fps} fps: the jump must end on top of the ledge");
+        }
+    }
+
+    #[test]
+    fn standing_still_stays_on_the_ground() {
+        let grid = meadow_start();
+        let mut pos = Vec3::new(4.5, 2.0, 0.0);
+        let mut body = Body { half: Vec2::new(0.28, 0.42), on_ground: true, ..default() };
+        for _ in 0..60 {
+            let (vel_y, rise) = fall(body.vel.y, GRAVITY, 1.0 / 60.0);
+            body.vel.y = vel_y;
+            let contacts = move_body(&mut pos, &mut body, Vec2::new(0.0, rise), &grid);
+            assert!(contacts.landed);
+        }
+        assert_eq!(pos.y, 2.0);
+    }
 }
