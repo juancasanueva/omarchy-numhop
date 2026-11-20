@@ -23,6 +23,22 @@ Jumps, gems, stomps, questions, right and wrong answers, checkpoints, cleared
 worlds and the menu all have their own. Turn them off with **Sound** under
 **Settings**; the choice is saved with the others.
 
+## Screenshots
+
+| | |
+|:---:|:---:|
+| ![The main menu: two players with names, ages, heroes, and Mateo starting in Starry Night](docs/screenshots/menu.jpg) | ![High scores: the top players by best score, with the worlds each has cleared](docs/screenshots/high-scores.jpg) |
+| Two players set their names, ages, heroes and start worlds | High scores, saved between runs |
+| ![A crystal question: 2 × 5 with four answers and a 30-second clock](docs/screenshots/question.jpg) | ![A right answer, with the times table worked out underneath](docs/screenshots/feedback.jpg) |
+| Bump a crystal to get a question at your level | Every answer comes with the working |
+| ![Mateo plays Starry Night, the fifth world](docs/screenshots/starry-night.jpg) | ![The results: Mateo wins, and Lucía's score is marked New best](docs/screenshots/results.jpg) |
+| Five worlds, from Sunny Meadow to Starry Night | Results, with any new best score marked |
+| ![The same question screen in Spanish: a subtraction with borrowing in school notation](docs/screenshots/question-es.jpg) | |
+| En español, con la notación del cole | |
+
+These are made by `NUMHOP_CAPTURE_SCENARIO=readme bin/screenshots <dir>`, which plays
+a scripted match with demo records in memory only (nothing is saved).
+
 ## How it plays
 
 - **One or two players.** Each starts with three lives. Solo players earn an extra
