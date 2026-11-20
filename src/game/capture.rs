@@ -16,9 +16,17 @@ use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use super::Screen;
 use super::level::{Body, Enemy, KeyPickup, Player};
 use super::question::Asking;
+use super::records::SavedRecords;
 
 #[derive(Debug, Clone)]
 enum Step {
+    /// Lose every remaining life until the results show: fall while playing, press
+    /// Space on each banner. Counting deaths instead would break whenever a Grumble
+    /// catches someone on the way.
+    PlayToResults,
+    /// Fill the in-memory records with demo players, so the world picker and the High
+    /// scores page have something to show. Capture runs never save records.
+    SeedRecords,
     Wait(f32),
     Tap(KeyCode),
     Hold(KeyCode, f32),
@@ -57,7 +65,11 @@ pub fn plugin(app: &mut App) {
     let Some(dir) = std::env::var_os("NUMHOP_CAPTURE").map(PathBuf::from) else { return };
     let _ = std::fs::create_dir_all(&dir);
     let scenario = std::env::var("NUMHOP_CAPTURE_SCENARIO").unwrap_or_default();
-    let steps = if scenario == "quit-to-menu" { quit_to_menu() } else { full_tour() };
+    let steps = match scenario.as_str() {
+        "quit-to-menu" => quit_to_menu(),
+        "readme" => readme_tour(),
+        _ => full_tour(),
+    };
     app.insert_resource(Script {
         dir,
         steps,
@@ -67,6 +79,74 @@ pub fn plugin(app: &mut App) {
         tapped: None,
     })
     .add_systems(PreUpdate, drive.after(InputSystems).run_if(not(in_state(Screen::Loading))));
+}
+
+/// The shots used in the README: a filled menu and High scores page, a question and
+/// its worked answer, a later world, and results with a new best.
+fn readme_tour() -> Vec<Step> {
+    use Step::*;
+    let tap = |k| [Tap(k), Wait(0.2)];
+    let mut steps = vec![Wait(2.5), SeedRecords, Wait(0.3)];
+    // Two players: Lucía (age 8) starts in world 1, Mateo in Starry Night.
+    steps.extend(tap(KeyCode::ArrowRight));
+    steps.extend(tap(KeyCode::ArrowDown));
+    steps.extend(tap(KeyCode::Enter));
+    steps.extend([Type("Lucía"), Wait(0.2)]);
+    steps.extend(tap(KeyCode::Enter));
+    steps.extend(tap(KeyCode::ArrowDown));
+    steps.extend(tap(KeyCode::ArrowRight));
+    for _ in 0..3 {
+        steps.extend(tap(KeyCode::ArrowDown));
+    }
+    steps.extend(tap(KeyCode::Enter));
+    steps.extend([Type("Mateo"), Wait(0.2)]);
+    steps.extend(tap(KeyCode::Enter));
+    for _ in 0..3 {
+        steps.extend(tap(KeyCode::ArrowDown));
+    }
+    for _ in 0..4 {
+        steps.extend(tap(KeyCode::ArrowRight));
+    }
+    steps.extend([Wait(0.4), Shot("menu")]);
+    steps.extend(tap(KeyCode::ArrowDown));
+    steps.extend([Tap(KeyCode::Enter), Wait(0.5), Shot("high-scores"), Tap(KeyCode::Escape), Wait(0.3)]);
+    // Lucía plays Sunny Meadow and answers a crystal question.
+    steps.extend([
+        Tap(KeyCode::Space),
+        Wait(1.5),
+        Tap(KeyCode::Space),
+        Wait(0.4),
+        Hold(KeyCode::ArrowRight, 0.6),
+        Wait(0.4),
+        Shot("meadow"),
+        UnderCrystal,
+        Wait(0.2),
+        Press(KeyCode::Space),
+        Wait(0.5),
+        Release(KeyCode::Space),
+        Wait(0.8),
+        Shot("question"),
+        AnswerCorrectly,
+        Wait(1.0),
+        Shot("feedback"),
+        Tap(KeyCode::Space),
+        Wait(1.0),
+        // A fall hands the turn to Mateo, in Starry Night.
+        Fall,
+        Wait(0.6),
+        Tap(KeyCode::Space),
+        Wait(1.5),
+        Hold(KeyCode::ArrowRight, 0.3),
+        Wait(0.2),
+        Shot("starry-night"),
+        // Lucía's crystal beats her saved best, so the results mark it.
+        PlayToResults,
+        Wait(0.8),
+        Shot("results"),
+        Wait(0.8),
+        Quit,
+    ]);
+    steps
 }
 
 /// Start a match, ask to quit, then choose the main menu instead.
@@ -216,6 +296,8 @@ fn drive(
     keys_q: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
     enemies: Query<&Transform, (With<Enemy>, Without<Player>)>,
     asking: Option<Res<Asking>>,
+    saved: Option<ResMut<SavedRecords>>,
+    screen: Res<State<Screen>>,
     mut typed: MessageWriter<KeyboardInput>,
     window: Query<Entity, With<PrimaryWindow>>,
     mut exit: MessageWriter<AppExit>,
@@ -228,6 +310,34 @@ fn drive(
     script.timer += time.delta_secs();
     let mut advance = true;
     match step {
+        Step::PlayToResults => {
+            advance = *screen.get() == Screen::Results;
+            // One action at a time, with room for each banner and level to appear.
+            if !advance && script.timer >= 0.9 {
+                script.timer = 0.0;
+                match screen.get() {
+                    Screen::Running => {
+                        if let Ok((mut tf, _)) = player.single_mut() {
+                            tf.translation.y = -10.0;
+                        }
+                    }
+                    Screen::Banner => {
+                        keys.press(KeyCode::Space);
+                        script.tapped = Some(KeyCode::Space);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Step::SeedRecords => {
+            if let Some(mut saved) = saved {
+                for (name, score, worlds) in
+                    [("sofía", 2650, 5), ("mateo", 1830, 4), ("leo", 1210, 3), ("ana", 640, 2), ("lucía", 200, 1)]
+                {
+                    saved.records.merge(name, score, worlds);
+                }
+            }
+        }
         Step::Wait(s) => advance = script.timer >= s,
         Step::Tap(k) => {
             keys.press(k);
