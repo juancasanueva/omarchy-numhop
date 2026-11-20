@@ -272,14 +272,12 @@ fn full_tour() -> Vec<Step> {
         Wait(0.5),
         Shot("12-dusk"),
     ];
-    // A Grumble catches the player (the death clip plays before the banner), then
-    // four falls use up every remaining life, ending the match.
+    // A Grumble catches the player (the death clip plays before the banner), then the
+    // remaining lives are lost until the match ends, however many are left.
     steps.extend([TouchGrumble, Wait(0.7), Shot("12a-knocked-out"), Wait(1.4), Tap(KeyCode::Space), Wait(0.6)]);
-    for _ in 0..4 {
-        steps.extend([Fall, Wait(0.6), Tap(KeyCode::Space), Wait(0.6)]);
-    }
     steps.extend([
-        Wait(0.6),
+        PlayToResults,
+        Wait(0.8),
         Shot("13-results"),
         Wait(0.8),
         Quit,
