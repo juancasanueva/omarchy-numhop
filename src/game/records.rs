@@ -26,6 +26,11 @@ impl SavedRecords {
         Self { records, path: None, unsaved: false }
     }
 
+    #[cfg(test)]
+    pub fn is_unsaved(&self) -> bool {
+        self.unsaved
+    }
+
     /// Something changed that the next banner should save.
     pub fn mark_unsaved(&mut self) {
         self.unsaved = true;
@@ -196,6 +201,30 @@ mod tests {
         let on_disk = settings::load_records(&path).unwrap();
         assert_eq!(on_disk.get("mateo"), Record { best_score: 640, worlds_cleared: 2 });
         assert_eq!(on_disk.get("lucía").worlds_cleared, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn practice_alone_is_saved_at_the_next_banner() {
+        use crate::domain::math::{Topic, generate_topic};
+        use crate::domain::practice::RetryQueue;
+        use crate::domain::rng::Rng;
+        let dir = temp_dir("practice-save");
+        let path = dir.join("records.toml");
+        let mut app = app_with(Records::default());
+        app.insert_resource(SavedRecords { records: Records::default(), path: Some(path.clone()), unsaved: false });
+        app.update();
+        // No score changes; only an answer recorded during the question.
+        {
+            let mut saved = app.world_mut().resource_mut::<SavedRecords>();
+            let question = generate_topic(Topic::Division, 2, &mut Rng::new(2));
+            saved.records.record_answer("lucía", &mut RetryQueue::default(), &question, false, false);
+            saved.mark_unsaved();
+        }
+        app.update();
+        let on_disk = settings::load_records(&path).unwrap();
+        assert_eq!(on_disk.practice("lucía").0[&Topic::Division].misses, 2);
+        assert!(!app.world().resource::<SavedRecords>().unsaved);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, Button, observe};
 
 use crate::domain::math::{self, ColumnOp, Prompt, Question};
-use crate::domain::practice::{RetryQueue, next_question, record_answer};
+use crate::domain::practice::{RetryQueue, next_question};
 use crate::domain::rules::{GEMS_PER_CRYSTAL, QUESTION_SECONDS, SCORE_CRYSTAL};
 use crate::i18n::{self, Strings};
 
@@ -57,6 +57,8 @@ pub(super) struct Asking {
     pub(super) question: Question,
     /// A missed question asked again; missing it again does not queue it a third time.
     retry: bool,
+    /// The answer is already in the player's practice, so it is never counted twice.
+    recorded: bool,
     remaining: f32,
     selected: usize,
     outcome: Option<Outcome>,
@@ -82,7 +84,7 @@ struct FeedbackArea;
 pub fn plugin(app: &mut App) {
     app.init_resource::<Clicked>()
         .init_resource::<Retries>()
-        .add_systems(OnEnter(Screen::Menu), |mut retries: ResMut<Retries>| *retries = Retries::default())
+        .add_systems(OnEnter(Screen::Menu), reset_retries)
         .add_systems(OnEnter(Screen::Asking), open)
         .add_systems(OnExit(Screen::Asking), |mut commands: Commands| commands.remove_resource::<Asking>())
         .add_systems(
@@ -116,6 +118,7 @@ fn open(
         kind: request.kind,
         question,
         retry,
+        recorded: false,
         remaining: QUESTION_SECONDS,
         selected: 0,
         outcome: None,
@@ -480,6 +483,31 @@ fn answer_input(
     }
 }
 
+/// Puts an answer into the answering player's practice, once, queues a first miss to
+/// be asked again, and has the next banner save it.
+fn record_once(
+    asking: &mut Asking,
+    outcome: Outcome,
+    seat: usize,
+    names: &PlayerNames,
+    saved: &mut SavedRecords,
+    retries: &mut Retries,
+) {
+    if asking.recorded {
+        return;
+    }
+    asking.recorded = true;
+    let key = SavedRecords::key(names, seat);
+    saved.records.record_answer(&key, &mut retries.0[seat], &asking.question, outcome == Outcome::Right, asking.retry);
+    saved.mark_unsaved();
+}
+
+/// Missed questions belong to the names and ages chosen for a match, which the menu
+/// can change.
+fn reset_retries(mut retries: ResMut<Retries>) {
+    *retries = Retries::default();
+}
+
 fn style_options(
     asking: Res<Asking>,
     accent: Res<Accent>,
@@ -504,7 +532,7 @@ fn style_options(
 fn finish(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
-    asking: Res<Asking>,
+    mut asking: ResMut<Asking>,
     mut game: ResMut<Game>,
     worlds: Res<Worlds>,
     mut grid: ResMut<Grid>,
@@ -543,10 +571,7 @@ fn finish(
         return;
     }
     // Recorded for the seat that answered, before a death or a gate passes the turn.
-    let seat = game.0.current;
-    let practice = saved.records.practice_mut(&SavedRecords::key(&names, seat));
-    record_answer(practice, &mut retries.0[seat], &asking.question, outcome == Outcome::Right, asking.retry);
-    saved.mark_unsaved();
+    record_once(&mut asking, outcome, game.0.current, &names, &mut saved, &mut retries);
     match (outcome, asking.kind) {
         (Outcome::Right, AskKind::Crystal { index, entity }) => {
             game.0.crystal_solved(index);
@@ -566,5 +591,69 @@ fn finish(
         (Outcome::Right, AskKind::Gate) => after_gate(&mut commands, tr, &mut game, &worlds),
         (Outcome::Wrong(_), _) => after_death(&mut commands, tr, &mut game, &worlds, tr.wrong_answer),
         (Outcome::TimeUp, _) => after_death(&mut commands, tr, &mut game, &worlds, tr.time_up),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::state::app::StatesPlugin;
+
+    use super::*;
+    use crate::domain::math::{Topic, generate_topic};
+    use crate::domain::records::Records;
+    use crate::domain::rng::Rng;
+
+    fn asking(retry: bool) -> Asking {
+        Asking {
+            kind: AskKind::Gate,
+            question: generate_topic(Topic::TimesTables, 2, &mut Rng::new(4)),
+            retry,
+            recorded: false,
+            remaining: QUESTION_SECONDS,
+            selected: 0,
+            outcome: None,
+            linger: 0.0,
+        }
+    }
+
+    fn names() -> PlayerNames {
+        PlayerNames(["Lucía".into(), "Mateo".into()])
+    }
+
+    #[test]
+    fn an_answer_counts_once_for_the_seat_that_gave_it() {
+        let mut saved = SavedRecords::in_memory(Records::default());
+        let mut retries = Retries::default();
+        let mut a = asking(false);
+        record_once(&mut a, Outcome::Wrong(0), 1, &names(), &mut saved, &mut retries);
+        // The same answer seen again (finish running a second time) changes nothing.
+        record_once(&mut a, Outcome::Wrong(0), 1, &names(), &mut saved, &mut retries);
+        let mateo = saved.records.practice("mateo");
+        assert_eq!(mateo.0[&Topic::TimesTables].misses, 2, "one miss, not two");
+        assert_eq!(saved.records.practice("lucía"), Default::default(), "not the other seat");
+        assert_eq!((retries.0[0].len(), retries.0[1].len()), (0, 1), "queued for Mateo only");
+        assert!(saved.is_unsaved(), "the next banner saves it");
+    }
+
+    #[test]
+    fn a_missed_retry_is_recorded_but_not_queued_again() {
+        let mut saved = SavedRecords::in_memory(Records::default());
+        let mut retries = Retries::default();
+        record_once(&mut asking(true), Outcome::TimeUp, 0, &names(), &mut saved, &mut retries);
+        assert_eq!(saved.records.practice("lucía").0[&Topic::TimesTables].misses, 2);
+        assert!(retries.0[0].is_empty());
+    }
+
+    #[test]
+    fn retries_are_dropped_on_the_menu() {
+        let mut app = App::new();
+        app.add_plugins(StatesPlugin)
+            .init_state::<Screen>()
+            .init_resource::<Retries>()
+            .add_systems(OnEnter(Screen::Menu), reset_retries);
+        app.world_mut().resource_mut::<Retries>().0[0].push(asking(false).question);
+        app.world_mut().resource_mut::<NextState<Screen>>().set(Screen::Menu);
+        app.update();
+        assert!(app.world().resource::<Retries>().0[0].is_empty());
     }
 }

@@ -10,10 +10,10 @@
 //! worlds_cleared = 3
 //! ```
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::math::Topic;
-use super::practice::{Practice, Skill};
+use super::math::{Question, Topic};
+use super::practice::{Practice, RetryQueue, Skill, record_answer};
 use super::rules::clean_name;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -31,12 +31,24 @@ pub struct Improved {
     pub worlds_cleared: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct Records {
     players: BTreeMap<String, Record>,
     /// What each player has been practising, by the same keys.
     practice: BTreeMap<String, Practice>,
+    /// Topics answered in this run, by key. Only these keep this run's view when
+    /// merging with a copy saved meanwhile; it is not saved.
+    answered: BTreeSet<(String, Topic)>,
 }
+
+/// Two sets of records are equal when they would save the same file.
+impl PartialEq for Records {
+    fn eq(&self, other: &Self) -> bool {
+        self.players == other.players && self.practice == other.practice
+    }
+}
+
+impl Eq for Records {}
 
 /// Whether `score` beats the best saved before the match. Without a saved best to
 /// compare with, nothing is claimed.
@@ -75,6 +87,12 @@ impl Records {
         self.practice.get(key).cloned().unwrap_or_default()
     }
 
+    /// Records this player's answer and remembers the topic as answered in this run.
+    pub fn record_answer(&mut self, key: &str, retries: &mut RetryQueue, question: &Question, right: bool, was_retry: bool) {
+        record_answer(self.practice_mut(key), retries, question, right, was_retry);
+        self.answered.insert((key.to_string(), question.topic));
+    }
+
     pub fn practice_mut(&mut self, key: &str) -> &mut Practice {
         self.practice.entry(key.to_string()).or_default()
     }
@@ -103,12 +121,15 @@ impl Records {
             mine.best_score = mine.best_score.max(theirs.best_score);
             mine.worlds_cleared = mine.worlds_cleared.max(theirs.worlds_cleared);
         }
-        // Practice has no "better" value: keep what this run knows about a topic, and
-        // take the other copy's view of topics this run has not touched.
+        // Practice has no "better" value: a topic answered in this run keeps this run's
+        // view, and every other topic takes the other copy's, which may be newer than
+        // what this run loaded at startup.
         for (key, theirs) in &other.practice {
             let mine = self.practice.entry(key.clone()).or_default();
             for (topic, skill) in &theirs.0 {
-                mine.0.entry(*topic).or_insert(*skill);
+                if !self.answered.contains(&(key.clone(), *topic)) {
+                    mine.0.insert(*topic, *skill);
+                }
             }
         }
     }
@@ -151,14 +172,16 @@ impl Records {
                 }
                 continue;
             }
+            // A player entry exists once one of its fields is read; a header alone, or a
+            // table with only practice, adds none.
             match name {
-                "best_score" | "worlds_cleared" => {
+                "best_score" => {
                     let record = records.players.entry(key.clone()).or_default();
-                    if name == "best_score" {
-                        record.best_score = value.parse().unwrap_or(record.best_score);
-                    } else {
-                        record.worlds_cleared = value.parse().unwrap_or(record.worlds_cleared);
-                    }
+                    record.best_score = value.parse().unwrap_or(record.best_score);
+                }
+                "worlds_cleared" => {
+                    let record = records.players.entry(key.clone()).or_default();
+                    record.worlds_cleared = value.parse().unwrap_or(record.worlds_cleared);
                 }
                 _ => {}
             }
@@ -305,16 +328,36 @@ mod tests {
     }
 
     #[test]
-    fn absorbing_keeps_this_runs_practice_and_adds_the_others() {
+    fn absorbing_keeps_only_topics_answered_in_this_run() {
+        use crate::domain::math::generate_topic;
+        use crate::domain::rng::Rng;
+        // This run loaded division (tier 2) and fractions-of (tier 2) at startup.
         let mut mine = Records::default();
-        mine.practice_mut("ana").answered(Topic::Division, 2, false);
+        mine.practice_mut("ana").answered(Topic::Division, 2, true);
+        mine.practice_mut("ana").answered(Topic::FractionOf, 2, true);
+        // It then misses a fraction-of question itself.
+        let question = generate_topic(Topic::FractionOf, 2, &mut Rng::new(1));
+        mine.record_answer("ana", &mut RetryQueue::default(), &question, false, false);
+
+        // Meanwhile another window saved newer division and fraction-of practice.
         let mut theirs = Records::default();
         theirs.practice_mut("ana").answered(Topic::Division, 4, true);
+        theirs.practice_mut("ana").answered(Topic::FractionOf, 4, true);
         theirs.practice_mut("ana").answered(Topic::Decimals, 3, true);
         mine.absorb(&theirs);
+
         let practice = mine.practice("ana");
-        assert_eq!(practice.tier(Topic::Division, 1), 1, "this run's view of division wins");
-        assert_eq!(practice.tier(Topic::Decimals, 1), 3, "the other copy's decimals are kept");
+        assert_eq!(practice.tier(Topic::Division, 1), 4, "only loaded here, so the newer copy wins");
+        assert_eq!(practice.tier(Topic::FractionOf, 1), 1, "answered here, so this run's view wins");
+        assert_eq!(practice.tier(Topic::Decimals, 1), 3, "new to this run, taken from the other copy");
+    }
+
+    #[test]
+    fn a_header_alone_adds_no_player_and_a_repeated_one_adds_to_it() {
+        let records = Records::parse("[\"ana\"]\n[\"bo\"]\nbest_score = 5\n[\"bo\"]\nworlds_cleared = 2\n");
+        assert!(records.ranked().iter().all(|(k, _)| *k != "ana"));
+        assert_eq!(records.render().matches("[\"ana\"]").count(), 0, "nothing to save for ana");
+        assert_eq!(records.get("bo"), Record { best_score: 5, worlds_cleared: 2 });
     }
 
     #[test]

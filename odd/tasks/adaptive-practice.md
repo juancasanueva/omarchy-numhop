@@ -63,3 +63,14 @@ is. A child who keeps failing borrowing sees it no more often than anything else
   (a different turn order), so it now uses PlayToResults like the README scenario.
 - Known limit: practice changed after the last banner is lost if the game is closed
   mid-world (saved at the next banner, like the scores).
+- Review review-dd8a07f783734815 approved and acknowledged with two warnings; the user
+  chose to fix them before merging (T5).
+- [x] T5 Two windows and the game wiring: Records remembers topics answered in this run
+  (not saved, not part of equality); absorb keeps only those and takes every other
+  topic from the copy on disk, so a topic merely loaded at startup no longer
+  overwrites newer practice. Asking.recorded makes record_once count an answer exactly
+  once, for the answering seat; reset_retries is a named system. Tests: per-seat once,
+  missed retry not requeued, retries dropped on the menu, practice-only change saved
+  at the next banner, header-only and repeated-header parsing; parse has one arm per
+  field. bin/test 123 passed; clippy clean; the full tour reaches the results;
+  reverting the merge rule or removing the once-guard makes their tests fail.
