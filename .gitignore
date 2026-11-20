@@ -5,3 +5,4 @@
 /pkgbuild/*.pkg.tar.*
 /pkgbuild/numhop
 *.blend1
+/.atl
