@@ -629,4 +629,54 @@ mod tests {
         assert_eq!(shown_name(t, &names, 0), "Player 1");
         assert_eq!(shown_name(t, &names, 1), "Mateo");
     }
+
+    fn menu_app(choices: MenuChoices) -> App {
+        let mut app = App::new();
+        app.add_message::<KeyboardInput>()
+            .add_message::<PlaySfx>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .insert_resource(choices)
+            .insert_resource(PlayerNames::default())
+            .insert_resource(Language(crate::i18n::Lang::En))
+            .insert_resource(Muted::default())
+            .insert_resource(Worlds(Vec::new()))
+            .add_systems(Update, navigate);
+        app
+    }
+
+    /// One frame with `key` just pressed, then the key let go.
+    fn tap(app: &mut App, key: KeyCode) {
+        app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+        app.update();
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.release(key);
+        input.clear();
+    }
+
+    fn muted(app: &App) -> bool {
+        app.world().resource::<Muted>().0
+    }
+
+    #[test]
+    fn the_sound_row_switches_sound_off_and_on() {
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Settings, Row::Sound);
+        let mut app = menu_app(choices);
+        tap(&mut app, KeyCode::ArrowRight);
+        assert!(muted(&app), "Right switches sound off");
+        tap(&mut app, KeyCode::Enter);
+        assert!(!muted(&app), "Enter switches it back on");
+        tap(&mut app, KeyCode::ArrowLeft);
+        assert!(muted(&app), "Left switches it too");
+    }
+
+    #[test]
+    fn other_rows_leave_the_sound_alone() {
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Settings, Row::Language);
+        let mut app = menu_app(choices);
+        tap(&mut app, KeyCode::ArrowRight);
+        assert!(!muted(&app), "changing the language must not mute");
+        assert_eq!(app.world().resource::<Language>().0, crate::i18n::Lang::Es);
+    }
 }

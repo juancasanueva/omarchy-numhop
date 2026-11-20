@@ -46,3 +46,56 @@ fn play(mut requests: MessageReader<PlaySfx>, bank: Option<Res<SoundBank>>, mute
         commands.spawn((AudioPlayer::new(bank.0[sfx].clone()), PlaybackSettings::DESPAWN));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sound_app(muted: bool) -> App {
+        let mut app = App::new();
+        // Stand-in handles: the test counts the audio entities, nothing is decoded.
+        let bank = Sfx::ALL.into_iter().map(|sfx| (sfx, Handle::default())).collect();
+        app.add_message::<PlaySfx>()
+            .insert_resource(SoundBank(bank))
+            .insert_resource(Muted(muted))
+            .add_systems(Update, play);
+        app
+    }
+
+    fn players(app: &mut App) -> usize {
+        app.world_mut().query::<&AudioPlayer>().iter(app.world()).count()
+    }
+
+    #[test]
+    fn a_request_plays_its_sound() {
+        let mut app = sound_app(false);
+        app.world_mut().write_message(PlaySfx(Sfx::Jump));
+        app.update();
+        assert_eq!(players(&mut app), 1);
+    }
+
+    #[test]
+    fn nothing_plays_while_muted() {
+        let mut app = sound_app(true);
+        for sfx in Sfx::ALL {
+            app.world_mut().write_message(PlaySfx(sfx));
+        }
+        app.update();
+        assert_eq!(players(&mut app), 0);
+
+        // Requests made while muted are dropped, not saved up for later.
+        app.world_mut().resource_mut::<Muted>().0 = false;
+        app.update();
+        assert_eq!(players(&mut app), 0);
+    }
+
+    #[test]
+    fn the_same_sound_plays_once_a_frame() {
+        let mut app = sound_app(false);
+        app.world_mut().write_message(PlaySfx(Sfx::Gem));
+        app.world_mut().write_message(PlaySfx(Sfx::Gem));
+        app.world_mut().write_message(PlaySfx(Sfx::Stomp));
+        app.update();
+        assert_eq!(players(&mut app), 2);
+    }
+}

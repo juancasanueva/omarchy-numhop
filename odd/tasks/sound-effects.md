@@ -49,4 +49,11 @@ on every jump makes the game feel alive and makes outcomes clearer.
   tour exit 0 with all 20 shots and no audio errors (Bevy decodes each source before
   applying volume, so a bad WAV would have panicked); 02c-settings-switched.png shows
   the Sound row.
+- Merged and pushed to main (a3a5f8f). Review approved and acknowledged; advisory
+  follow-ups only. The reliability lens flagged (WARNING) that no test proved the mute
+  gate, and that the Sound row toggle was untested.
+- [x] T6 Tests for the review follow-ups: `play` skips everything while muted and drops
+  those requests, plays one of each effect per frame; the Sound row switches with
+  Left/Right/Enter and the Language row leaves it alone. bin/test 73 passed; clippy
+  clean; removing the mute check makes `nothing_plays_while_muted` fail.
 - Pending: the user listens in a real game and tunes any sound that feels off.
