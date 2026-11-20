@@ -102,5 +102,5 @@ pub static STRINGS: Strings = Strings {
         ("Q", "Salir"),
     ],
     ordinals: ["1.º", "2.º", "3.º"],
-    worlds: ["Pradera Soleada", "Colinas del Atardecer"],
+    worlds: ["Pradera Soleada", "Colinas del Atardecer", "Picos Helados"],
 };

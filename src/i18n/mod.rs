@@ -76,7 +76,7 @@ macro_rules! catalog {
             /// Places in the results: first, second, third.
             pub ordinals: [&'static str; 3],
             /// World names, in world order.
-            pub worlds: [&'static str; 2],
+            pub worlds: [&'static str; 3],
         }
 
         impl Strings {
@@ -279,6 +279,14 @@ mod tests {
                 assert!(!b.is_empty(), "{lang:?}.{name} is empty");
                 assert_eq!(placeholders(a), placeholders(b), "{lang:?}.{name} placeholders differ");
             }
+        }
+    }
+
+    #[test]
+    fn every_world_has_a_name() {
+        let count = crate::domain::levels::worlds().len();
+        for lang in Lang::ALL {
+            assert_eq!(lang.strings().worlds.len(), count, "{lang:?} world names");
         }
     }
 

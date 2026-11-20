@@ -150,6 +150,17 @@ pub fn worlds() -> Vec<Level> {
             },
         )
         .expect("dusk map is valid"),
+        Level::parse(
+            "Frost Peaks",
+            FROST,
+            Palette {
+                sky: [0.62, 0.80, 0.93],
+                fog: [0.88, 0.93, 0.98],
+                sun: [0.90, 0.95, 1.0],
+                sun_lux: 10_000.0,
+            },
+        )
+        .expect("frost map is valid"),
     ]
 }
 
@@ -175,6 +186,17 @@ const DUSK: &[&str] = &[
     "==================  ================   ==================  ===============   ===================   =============  ================",
     "==================  ================   ==================  ===============   ===================   =============  ================",
 ];
+const FROST: &[&str] = &[
+    "",
+    "                                                           *",
+    "                       *                                  ***                                *                               **",
+    "                **                 *                 *                                   *               *",
+    "         C            BCB                 C              CBC             C                  BCB              C              CBBC    BB",
+    "                           B   B              BB                  BB                                        B  B                   BBB  K",
+    "  P   t     e       b   e    e          t   e   F           e   e          b   e    e          F  e  t          e   e        b    BBBB    G",
+    "================  ================   ===============   ===============  ================   =============   =============  ==================",
+    "================  ================   ===============   ===============  ================   =============   =============  ==================",
+];
 
 #[cfg(test)]
 mod tests {
@@ -183,7 +205,7 @@ mod tests {
     #[test]
     fn worlds_parse() {
         let worlds = worlds();
-        assert_eq!(worlds.len(), 2);
+        assert_eq!(worlds.len(), 3);
         for w in &worlds {
             assert!(w.crystals().len() >= 5, "{} has few crystals", w.name);
             assert!(!w.checkpoints.is_empty());
