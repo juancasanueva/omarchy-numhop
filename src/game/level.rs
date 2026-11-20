@@ -2,6 +2,8 @@
 //!
 //! Units: one tile is one unit. The play plane is z = 0, the camera looks from +z.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use std::collections::{HashMap, HashSet};
 
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -259,7 +261,7 @@ fn spawn_level(
     let ground: HashSet<Cell> = level.tiles.iter().filter(|(_, t)| *t == Tile::Ground).map(|(c, _)| *c).collect();
     let soil_mesh = meshes.add(Cuboid::new(1.0, 1.0, 3.0));
     let soil_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.62, 0.43, 0.30),
+        base_color: Color::srgb(0.52, 0.35, 0.24),
         perceptual_roughness: 1.0,
         ..default()
     });

@@ -53,12 +53,13 @@ struct ThemeWatch {
 }
 
 pub fn plugin(app: &mut App) {
-    let path = theme_colors_path();
-    let accent = path.as_ref().and_then(|p| read_accent(p)).unwrap_or_else(fallback);
+    // Capture mode uses the default accent, so screenshots look the same everywhere.
+    let path = if std::env::var_os("NUMHOP_CAPTURE").is_some() { None } else { theme_colors_path() };
+    let accent = path.as_ref().and_then(read_accent).unwrap_or_else(fallback);
     app.insert_resource(Accent(accent))
         .insert_resource(Rounding(hypr_rounding()))
         .insert_resource(ThemeWatch {
-            modified: path.as_ref().and_then(|p| modified(p)),
+            modified: path.as_ref().and_then(modified),
             path,
             timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         })

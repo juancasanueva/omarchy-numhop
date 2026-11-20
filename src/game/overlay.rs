@@ -1,6 +1,8 @@
 //! The help overlay (`?`) and the quit confirmation (`Q`). Either one pauses the game,
 //! including the question clock, so reading the help never costs a life.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::prelude::*;
 
 use super::assets::GameAssets;

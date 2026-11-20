@@ -3,6 +3,8 @@
 //! A right answer keeps the controller; a wrong answer or running out of time costs a
 //! life. Either way the worked solution is shown before play resumes.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui_widgets::{Activate, Button, observe};
@@ -41,9 +43,9 @@ enum Outcome {
 }
 
 #[derive(Resource)]
-struct Asking {
+pub(super) struct Asking {
     kind: AskKind,
-    question: Question,
+    pub(super) question: Question,
     remaining: f32,
     selected: usize,
     outcome: Option<Outcome>,
@@ -411,7 +413,7 @@ fn answer_input(
     // Arrows move through the 2×2 grid: left/right within a row, up/down between rows.
     let s = asking.selected;
     if keys.any_just_pressed([KeyCode::ArrowRight, KeyCode::KeyD]) {
-        asking.selected = if s % 2 == 0 { s + 1 } else { s - 1 };
+        asking.selected = if s.is_multiple_of(2) { s + 1 } else { s - 1 };
     }
     if keys.any_just_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]) {
         asking.selected = if s % 2 == 1 { s - 1 } else { s + 1 };

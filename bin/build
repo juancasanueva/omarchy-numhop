@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Builds an optimized binary into build/numhop.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo build --release --locked
+mkdir -p build
+cp target/release/numhop build/numhop
+echo "Built build/numhop"

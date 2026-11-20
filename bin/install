@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Builds the Arch package from this checkout and installs it, so numhop shows up
+# in the Omarchy app launcher (Super + Space).
+set -euo pipefail
+cd "$(dirname "$0")/../pkgbuild"
+
+flags=(-fsi)
+# A rustup install in ~/.cargo is invisible to pacman. When cargo works but pacman
+# does not know it, skip makepkg's dependency check rather than pulling in a second
+# Rust toolchain. The runtime libraries it would check ship with Omarchy.
+if command -v cargo >/dev/null && ! pacman -T cargo >/dev/null; then
+  flags+=(--nodeps)
+fi
+makepkg "${flags[@]}"

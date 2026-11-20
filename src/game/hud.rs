@@ -1,6 +1,8 @@
 //! The heads-up display: one panel per player, the current world and difficulty, a
 //! controls hint, and short toasts like "+100".
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::prelude::*;
 
 use crate::domain::math::tier_stars;

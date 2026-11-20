@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=numhop
+Name[es]=numhop
+GenericName=Math Platformer
+GenericName[es]=Plataformas matemático
+Comment=Hop, jump, and solve math puzzles in a 3D world
+Comment[es]=Salta y resuelve problemas de matemáticas en un mundo 3D
+Exec=numhop
+Icon=numhop
+Terminal=false
+Categories=Game;KidsGame;
+Keywords=math;maths;kids;platformer;fractions;
+StartupWMClass=numhop

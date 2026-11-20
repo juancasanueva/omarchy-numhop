@@ -27,14 +27,14 @@ only the game design (mechanics and math curriculum) and rebuild everything orig
 - TDD mode: off (source: no project/session TDD config). Runner: `cargo test`.
 
 ## Tasks
-- [ ] T1 Scaffold Cargo project, bin scripts, Bevy 0.20 window opens
-- [ ] T2 Domain: math generators + tests
-- [ ] T3 Domain: game rules (turns, lives, tiers, scoring) + tests
-- [ ] T4 Blender models: heroes, enemy, blocks, ground, gem, key, gate, flag, decor -> .glb
-- [ ] T5 Bevy: level building, player movement/physics, camera, enemies, pits
-- [ ] T6 Bevy: question overlay (timer, options, keyboard), HUD, menus, turns, results
-- [ ] T7 Omarchy integration: theme accent live, PKGBUILD, .desktop, icon, README
-- [ ] T8 Verify: cargo test, build, run screenshot, makepkg build
+- [x] T1 Scaffold Cargo project, bin scripts, Bevy 0.20 window opens
+- [x] T2 Domain: math generators + tests
+- [x] T3 Domain: game rules (turns, lives, tiers, scoring) + tests
+- [x] T4 Blender models: heroes, enemy, blocks, ground, gem, key, gate, flag, decor -> .glb
+- [x] T5 Bevy: level building, player movement/physics, camera, enemies, pits
+- [x] T6 Bevy: question overlay (timer, options, keyboard), HUD, menus, turns, results
+- [x] T7 Omarchy integration: theme accent live, PKGBUILD, .desktop, icon, README
+- [x] T8 Verify: cargo test, build, run screenshot, makepkg build
 
 ## Acceptance criteria
 - `bin/test` passes; `bin/build` produces build/numhop; game playable end to end
@@ -42,6 +42,18 @@ only the game design (mechanics and math curriculum) and rebuild everything orig
 
 ## Progress
 - Started 2026-11-20.
+- T1–T6 done. 27 unit tests pass. Scripted capture (NUMHOP_CAPTURE) verified menu,
+  banner, running, question, feedback, turn handover, and help screens visually.
+- Bevy 0.20 API notes: WorldAssetRoot (not SceneRoot), conditions use `.and_then`,
+  buttons are `ui_widgets::Button` + `Activate` observer + `Hovered`, FontSize::Px,
+  Node.border_radius, MessageWriter<AppExit>.
+- Default Bevy font lacks − × ÷ ★ ♥: bundled Noto Sans Bold + Noto Sans Symbols2.
+
+- T7/T8 done: PKGBUILD (`makepkg -f --nodeps`) built numhop-0.1.0-1 with check()
+  passing; package contents verified (binary, 14 models, fonts, desktop, icon,
+  licenses). desktop-file-validate clean. Extended capture verified gate question,
+  world 2 (Dusk Hills), game over, and results. Clippy clean, 27 tests pass.
+- Not done: `makepkg -i` install (needs the user's sudo); not played by a human yet.
 
 ## Next step
-T1 + T2 inline; T4 in a parallel fork (disjoint surface: assets/, assets-src/).
+User runs `bin/install` and play-tests; tune jump/difficulty from feedback.

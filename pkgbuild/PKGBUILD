@@ -1,0 +1,32 @@
+# Builds numhop from the checkout this folder lives in.
+pkgname=numhop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A 3D math platformer: hop, jump, and solve"
+arch=('x86_64')
+license=('MIT')
+depends=('alsa-lib' 'systemd-libs' 'libxkbcommon' 'wayland' 'vulkan-icd-loader')
+makedepends=('cargo')
+options=('!lto' '!debug')
+
+build() {
+  cd "$startdir/.."
+  export CARGO_TARGET_DIR="$startdir/.."/target
+  cargo build --release --locked
+}
+
+check() {
+  cd "$startdir/.."
+  cargo test --locked --lib
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 target/release/numhop "$pkgdir/usr/bin/numhop"
+  install -d "$pkgdir/usr/share/numhop/assets"
+  cp -r assets/models assets/fonts "$pkgdir/usr/share/numhop/assets/"
+  install -Dm644 pkgbuild/numhop.desktop "$pkgdir/usr/share/applications/numhop.desktop"
+  install -Dm644 pkgbuild/numhop.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/numhop.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/numhop/LICENSE"
+  install -Dm644 assets/fonts/LICENSE-noto.txt "$pkgdir/usr/share/licenses/numhop/LICENSE-noto.txt"
+}

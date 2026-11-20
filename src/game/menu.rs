@@ -1,6 +1,8 @@
 //! The start menu: one or two players, each with an age level and a hero.
 //! Choices are remembered between matches.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::prelude::*;
 
 use crate::domain::math::AgeLevel;

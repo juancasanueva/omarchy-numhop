@@ -1,5 +1,7 @@
 //! Running and jumping: input, tile physics, enemies, pickups, and the camera.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use bevy::prelude::*;
 
 use super::banner::after_death;

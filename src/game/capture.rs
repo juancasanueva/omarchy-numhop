@@ -2,6 +2,8 @@
 //! session and saves screenshots of each screen, then quits. It lets a change be
 //! checked visually without anyone at the keyboard. Off unless the variable is set.
 
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 use std::path::PathBuf;
 
 use bevy::input::InputSystems;
@@ -9,7 +11,8 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use super::Screen;
-use super::level::{Body, Player};
+use super::level::{Body, KeyPickup, Player};
+use super::question::Asking;
 
 #[derive(Debug, Clone)]
 enum Step {
@@ -19,6 +22,12 @@ enum Step {
     Shot(&'static str),
     /// Put the player right under the first crystal and jump into it.
     JumpIntoCrystal,
+    /// Put the player on the gate key.
+    TouchKey,
+    /// Press the number of the right option.
+    AnswerCorrectly,
+    /// Drop the player into a gap.
+    Fall,
     Quit,
 }
 
@@ -36,7 +45,7 @@ pub fn plugin(app: &mut App) {
     let Some(dir) = std::env::var_os("NUMHOP_CAPTURE").map(PathBuf::from) else { return };
     let _ = std::fs::create_dir_all(&dir);
     use Step::*;
-    let steps = vec![
+    let mut steps = vec![
         Wait(2.5),
         Shot("01-menu"),
         Tap(KeyCode::ArrowRight),
@@ -61,9 +70,34 @@ pub fn plugin(app: &mut App) {
         Tap(KeyCode::F1),
         Wait(0.6),
         Shot("08-help"),
+        Tap(KeyCode::F1),
+        Wait(0.4),
+        Tap(KeyCode::Space),
+        Wait(0.5),
+        TouchKey,
+        Wait(1.0),
+        Shot("09-gate-question"),
+        AnswerCorrectly,
+        Wait(1.0),
+        Shot("10-gate-feedback"),
+        Tap(KeyCode::Space),
+        Wait(1.0),
+        Shot("11-world-cleared"),
+        Tap(KeyCode::Space),
+        Hold(KeyCode::ArrowRight, 1.0),
+        Wait(0.5),
+        Shot("12-dusk"),
+    ];
+    // Five falls use up every remaining life, ending the match.
+    for _ in 0..5 {
+        steps.extend([Fall, Wait(0.6), Tap(KeyCode::Space), Wait(0.6)]);
+    }
+    steps.extend([
+        Wait(0.6),
+        Shot("13-results"),
         Wait(0.8),
         Quit,
-    ];
+    ]);
     app.insert_resource(Script {
         dir,
         steps,
@@ -81,6 +115,8 @@ fn drive(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     mut commands: Commands,
     mut player: Query<(&mut Transform, &mut Body), With<Player>>,
+    keys_q: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
+    asking: Option<Res<Asking>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     // A tap lasts exactly one frame.
@@ -115,6 +151,24 @@ fn drive(
             if let Ok((mut tf, mut body)) = player.single_mut() {
                 tf.translation = Vec3::new(8.5, 2.0, 0.0);
                 body.vel = Vec2::new(0.0, 14.0);
+            }
+        }
+        Step::TouchKey => {
+            if let (Ok((mut tf, mut body)), Ok(key)) = (player.single_mut(), keys_q.single()) {
+                tf.translation = key.translation - Vec3::Y * 0.4;
+                body.vel = Vec2::ZERO;
+            }
+        }
+        Step::AnswerCorrectly => {
+            if let Some(asking) = &asking {
+                let k = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4][asking.question.correct];
+                keys.press(k);
+                script.tapped = Some(k);
+            }
+        }
+        Step::Fall => {
+            if let Ok((mut tf, _)) = player.single_mut() {
+                tf.translation.y = -10.0;
             }
         }
         Step::Quit => {

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Plays a short scripted session and saves a screenshot of each screen into the
+# given folder (default: build/screenshots). Opens a window for about 20 seconds.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+out="${1:-build/screenshots}"
+cargo build --locked
+NUMHOP_CAPTURE="$out" ./target/debug/numhop
+echo "Screenshots in $out"

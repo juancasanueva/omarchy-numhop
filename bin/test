@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Runs the domain and adapter unit tests. No window or GPU needed.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+cargo test --locked "$@"

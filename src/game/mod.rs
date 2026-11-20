@@ -94,9 +94,13 @@ fn asset_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("NUMHOP_ASSETS") {
         return PathBuf::from(dir);
     }
+    let system = PathBuf::from("/usr/share/numhop/assets");
+    // An installed binary uses the installed assets, even if the checkout it was
+    // built from still exists on this machine.
+    let installed = std::env::current_exe().is_ok_and(|exe| exe.starts_with("/usr"));
     let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
-    if dev.join("models").is_dir() {
+    if !installed && dev.join("models").is_dir() {
         return dev;
     }
-    PathBuf::from("/usr/share/numhop/assets")
+    system
 }

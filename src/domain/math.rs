@@ -5,6 +5,7 @@
 //! results simplified to lowest terms. Every question has four distinct options.
 
 use std::fmt;
+use std::ops::{Add, Div, Mul, Sub};
 
 use super::rng::Rng;
 
@@ -102,19 +103,32 @@ impl Fraction {
         self.den
     }
 
-    pub fn add(self, o: Self) -> Self {
+}
+
+impl Add for Fraction {
+    type Output = Self;
+    fn add(self, o: Self) -> Self {
         Self::new(self.num * o.den + o.num * self.den, self.den * o.den)
     }
+}
 
-    pub fn sub(self, o: Self) -> Self {
+impl Sub for Fraction {
+    type Output = Self;
+    fn sub(self, o: Self) -> Self {
         Self::new(self.num * o.den - o.num * self.den, self.den * o.den)
     }
+}
 
-    pub fn mul(self, o: Self) -> Self {
+impl Mul for Fraction {
+    type Output = Self;
+    fn mul(self, o: Self) -> Self {
         Self::new(self.num * o.num, self.den * o.den)
     }
+}
 
-    pub fn div(self, o: Self) -> Self {
+impl Div for Fraction {
+    type Output = Self;
+    fn div(self, o: Self) -> Self {
         Self::new(self.num * o.den, self.den * o.num)
     }
 }
