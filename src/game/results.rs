@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use crate::domain::records::is_new_best;
 use crate::domain::rules::Match;
 use crate::i18n::fill;
 
@@ -49,20 +50,20 @@ fn show(
             c.spawn((label(a, headline, 46.0, ui::TEXT), AccentText));
             for (place, &i) in ranking.iter().enumerate() {
                 let p = &m.players[i];
-                let before = best_before.as_ref().and_then(|b| b.0.get(i).copied()).unwrap_or(0);
                 let mut line = fill(
-                        t.result_line,
-                        &[
-                            &t.ordinal(place),
-                            &p.config.label,
-                            &p.config.character.name(),
-                            &p.world.min(m.total_worlds),
-                            &m.total_worlds,
-                            &p.score,
-                            &p.gems,
-                        ],
-                    );
-                if p.score > before {
+                    t.result_line,
+                    &[
+                        &t.ordinal(place),
+                        &p.config.label,
+                        &p.config.character.name(),
+                        &p.world.min(m.total_worlds),
+                        &m.total_worlds,
+                        &p.score,
+                        &p.gems,
+                    ],
+                );
+                let best_before = best_before.as_ref().and_then(|b| b.0.get(i).copied());
+                if is_new_best(p.score, best_before) {
                     line = format!("{line}  ·  {}", t.new_best);
                 }
                 c.spawn(label(a, line, 22.0, ui::TEXT));

@@ -16,12 +16,14 @@ use super::{Game, PlayerNames, Screen, capturing};
 pub struct SavedRecords {
     pub records: Records,
     path: Option<PathBuf>,
+    /// An improvement is not on disk yet; saving is retried until it is.
+    unsaved: bool,
 }
 
 impl SavedRecords {
     /// Records that are used but never saved.
     pub fn in_memory(records: Records) -> Self {
-        Self { records, path: None }
+        Self { records, path: None, unsaved: false }
     }
 
     /// The record key for seat `seat`, from the names typed in the menu.
@@ -48,9 +50,16 @@ fn load() -> SavedRecords {
     if capturing() {
         return SavedRecords::in_memory(Records::default());
     }
-    let path = settings::records_path();
-    let records = path.as_deref().map(settings::load_records).unwrap_or_default();
-    SavedRecords { records, path }
+    let Some(path) = settings::records_path() else { return SavedRecords::in_memory(Records::default()) };
+    match settings::load_records(&path) {
+        Ok(records) => SavedRecords { records, path: Some(path), unsaved: false },
+        Err(err) => {
+            // Saving now would replace records we could not read, so this run keeps
+            // its progress in memory only.
+            warn!("could not read records from {}: {err}; progress will not be saved this run", path.display());
+            SavedRecords::in_memory(Records::default())
+        }
+    }
 }
 
 fn keep_records(
@@ -65,18 +74,20 @@ fn keep_records(
         let bests = (0..players.len()).map(|i| saved.records.get(&SavedRecords::key(&names, i)).best_score).collect();
         commands.insert_resource(BestBefore(bests));
     }
-    let mut improved = false;
     for (i, p) in players.iter().enumerate() {
-        let gain = saved.records.merge(&SavedRecords::key(&names, i), p.score, p.world);
-        improved |= gain.best_score || gain.worlds_cleared;
+        // Being in world N means N worlds were cleared: a chosen start is limited to
+        // worlds already reached, and clearing the last world leaves `world` at the total.
+        let worlds_cleared = p.world;
+        let gain = saved.records.merge(&SavedRecords::key(&names, i), p.score, worlds_cleared);
+        saved.unsaved |= gain.best_score || gain.worlds_cleared;
     }
-    if !improved {
+    if !saved.unsaved {
         return;
     }
-    if let Some(path) = &saved.path
-        && let Err(err) = settings::save_records(path, &saved.records)
-    {
-        warn!("could not save records to {}: {err}", path.display());
+    let Some(path) = saved.path.clone() else { return };
+    match settings::save_records(&path, &saved.records) {
+        Ok(()) => saved.unsaved = false,
+        Err(err) => warn!("could not save records to {}: {err}; will try again", path.display()),
     }
 }
 
@@ -126,5 +137,28 @@ mod tests {
         let saved = &app.world().resource::<SavedRecords>().records;
         assert_eq!(saved.get("lucía"), Record { best_score: 1200, worlds_cleared: 2 });
         assert_eq!(app.world().resource::<BestBefore>().0, vec![800], "the snapshot stays for the whole match");
+    }
+
+    #[test]
+    fn a_failed_save_is_tried_again_at_the_next_banner() {
+        let dir = std::env::temp_dir().join(format!("numhop-test-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A plain file where the folder should be makes the first save fail.
+        let blocker = dir.join("numhop");
+        std::fs::write(&blocker, "").unwrap();
+        let path = blocker.join("records.toml");
+
+        let mut app = app_with(Records::default());
+        app.insert_resource(SavedRecords { records: Records::default(), path: Some(path.clone()), unsaved: false });
+        app.world_mut().resource_mut::<Game>().0.player_mut().world = 1;
+        app.update();
+        assert!(app.world().resource::<SavedRecords>().unsaved, "the failed save is remembered");
+
+        std::fs::remove_file(&blocker).unwrap();
+        app.update();
+        assert!(!app.world().resource::<SavedRecords>().unsaved);
+        assert_eq!(settings::load_records(&path).unwrap().get("lucía").worlds_cleared, 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

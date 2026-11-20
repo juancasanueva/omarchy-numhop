@@ -104,11 +104,12 @@ impl MenuChoices {
         self.row = self.rows().iter().position(|r| *r == focus).unwrap_or(0);
     }
 
-    /// The world seat `p` will start in: their choice, held back to the worlds the name
-    /// now in that seat has reached, since a name can change after the choice.
-    fn start_world(&self, p: usize, names: &PlayerNames, saved: &SavedRecords, total_worlds: usize) -> usize {
+    /// The world seat `p` will start in, and how many worlds they may start from. The
+    /// choice is held back to the worlds the name now in that seat has reached, since a
+    /// name can change after the choice.
+    fn start_world(&self, p: usize, names: &PlayerNames, saved: &SavedRecords, total_worlds: usize) -> (usize, usize) {
         let startable = saved.records.startable_worlds(&SavedRecords::key(names, p), total_worlds);
-        self.configs[p].start_world.min(startable - 1)
+        (self.configs[p].start_world.min(startable - 1), startable)
     }
 
     /// True while a player is typing a name, so letter keys type instead of acting.
@@ -296,7 +297,7 @@ fn draw(
                 choices.configs[*p].character.name().to_string(),
             ),
             Row::World(p) => {
-                let w = choices.start_world(*p, &names, &saved, worlds.0.len());
+                let (w, _) = choices.start_world(*p, &names, &saved, worlds.0.len());
                 (fill(t.player_start, &[&shown_name(t, &names, *p)]), format!("{} · {}", w + 1, t.world(w)))
             }
             Row::About => (t.about.to_string(), String::new()),
@@ -428,7 +429,7 @@ fn navigate(
         let mut configs = choices.configs[..choices.players].to_vec();
         for (i, c) in configs.iter_mut().enumerate() {
             c.label = shown_name(t, &names, i);
-            c.start_world = choices.start_world(i, &names, &saved, worlds.0.len());
+            c.start_world = choices.start_world(i, &names, &saved, worlds.0.len()).0;
         }
         let game = Game(Match::new(configs, worlds.0.len()));
         let banner = turn_banner(t, &game, &worlds, t.ready.into(), None);
@@ -451,9 +452,10 @@ fn navigate(
             }
             Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
             Row::World(p) => {
-                let startable = saved.records.startable_worlds(&SavedRecords::key(&names, p), worlds.0.len());
-                let w = choices.start_world(p, &names, &saved, worlds.0.len());
-                choices.configs[p].start_world = if left { (w + startable - 1) % startable } else { (w + 1) % startable };
+                let (w, startable) = choices.start_world(p, &names, &saved, worlds.0.len());
+                // Step one world, wrapping around at either end.
+                let previous = if w == 0 { startable - 1 } else { w - 1 };
+                choices.configs[p].start_world = if left { previous } else { (w + 1) % startable };
             }
             Row::About if confirm || right => choices.open(Page::About, Row::Back),
             Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),

@@ -57,3 +57,14 @@ worlds, kids replay the first ones over and over, and a great run leaves no trac
   (shot 06 shows no question, results 0/0). Plain main at 6204002 does the same twice
   in a row, so this change did not cause it. "New best!" was not seen on screen for
   that reason; keep_records is covered by an app test.
+- Review review-05f3da51c2184841 approved and acknowledged, with warnings that broke
+  this feature's own constraints, so they were fixed as task T7:
+- [x] T7 Review fixes: load_records reads bytes and decodes lossily (one bad byte loses
+  one line) and returns an error for a file that exists but cannot be read, and that
+  run keeps progress in memory only instead of saving over it; a failed save sets
+  `unsaved` and is retried at the next banner; startable_worlds uses saturating_add
+  (a corrupted huge count no longer panics); "New best!" is the tested pure
+  `is_new_best`, with no claim when the snapshot is missing; world-index comment, one
+  menu helper returns (world, startable), results block reindented.
+  bin/test 93 passed; clippy clean; mutating the retry or the overflow makes their
+  tests fail.

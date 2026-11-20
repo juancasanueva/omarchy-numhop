@@ -32,6 +32,12 @@ pub struct Improved {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Records(BTreeMap<String, Record>);
 
+/// Whether `score` beats the best saved before the match. Without a saved best to
+/// compare with, nothing is claimed.
+pub fn is_new_best(score: u32, best_before: Option<u32>) -> bool {
+    best_before.is_some_and(|best| score > best)
+}
+
 /// The record key for the name typed into seat `seat` (0 or 1).
 pub fn record_key(name: &str, seat: usize) -> String {
     let name = clean_name(name).to_lowercase();
@@ -58,7 +64,7 @@ impl Records {
     /// How many worlds this player may start from: the first, plus one for each world
     /// cleared, up to `total_worlds`.
     pub fn startable_worlds(&self, key: &str, total_worlds: usize) -> usize {
-        (self.get(key).worlds_cleared + 1).min(total_worlds).max(1)
+        self.get(key).worlds_cleared.saturating_add(1).min(total_worlds).max(1)
     }
 
     /// Reads records, skipping anything it does not understand, so a damaged file loses
@@ -162,5 +168,20 @@ mod tests {
         assert_eq!(records.get("bo"), Record { best_score: 70, worlds_cleared: 0 });
         assert_eq!(records.get("bad\"key"), Record::default(), "a key with a quote is dropped");
         assert_eq!(Records::parse(""), Records::default());
+    }
+
+    #[test]
+    fn a_huge_world_count_is_held_to_the_last_world() {
+        let records = Records::parse(&format!("[\"ana\"]\nworlds_cleared = {}\n", usize::MAX));
+        assert_eq!(records.startable_worlds("ana", 5), 5);
+    }
+
+    #[test]
+    fn a_new_best_must_beat_the_old_one() {
+        assert!(is_new_best(901, Some(900)));
+        assert!(!is_new_best(900, Some(900)), "a tie is not a new best");
+        assert!(!is_new_best(0, Some(0)), "scoring nothing is never a best");
+        assert!(is_new_best(20, Some(0)), "a first score counts");
+        assert!(!is_new_best(5000, None), "no saved best to beat, no claim");
     }
 }

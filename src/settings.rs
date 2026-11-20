@@ -84,9 +84,15 @@ pub fn records_path() -> Option<PathBuf> {
     Some(base.join("numhop").join("records.toml"))
 }
 
-/// The saved records; a missing or unreadable file means none yet.
-pub fn load_records(path: &Path) -> Records {
-    std::fs::read_to_string(path).map(|text| Records::parse(&text)).unwrap_or_default()
+/// The saved records. A missing file means none yet. Bytes that are not valid text
+/// are replaced, so one damaged line loses only that line. A file that exists but
+/// cannot be read is an error, so the caller can avoid saving over it.
+pub fn load_records(path: &Path) -> io::Result<Records> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Records::parse(&String::from_utf8_lossy(&bytes))),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Records::default()),
+        Err(err) => Err(err),
+    }
 }
 
 pub fn save_records(path: &Path, records: &Records) -> io::Result<()> {
@@ -146,12 +152,32 @@ mod tests {
     fn records_round_trip_through_a_file_and_start_empty() {
         let dir = temp_dir("records");
         let path = dir.join("numhop/records.toml");
-        assert_eq!(load_records(&path), Records::default(), "no file yet means no records");
+        assert_eq!(load_records(&path).unwrap(), Records::default(), "no file yet means no records");
         let mut records = Records::default();
         records.merge("lucía", 1200, 2);
         save_records(&path, &records).unwrap();
-        assert_eq!(load_records(&path), records);
+        assert_eq!(load_records(&path).unwrap(), records);
         assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bad_byte_in_the_records_loses_only_its_line() {
+        let dir = temp_dir("records-bytes");
+        let path = dir.join("records.toml");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, b"[\"ana\"]\nbest_score = 70\n\xff\xfe junk\nworlds_cleared = 2\n").unwrap();
+        let records = load_records(&path).unwrap();
+        assert_eq!(records.get("ana"), crate::domain::records::Record { best_score: 70, worlds_cleared: 2 });
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn records_that_cannot_be_read_are_an_error_not_empty() {
+        // A folder where the file should be cannot be read as one.
+        let dir = temp_dir("records-unreadable");
+        std::fs::create_dir_all(dir.join("records.toml")).unwrap();
+        assert!(load_records(&dir.join("records.toml")).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
