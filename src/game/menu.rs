@@ -17,6 +17,7 @@ use super::level::{LevelEntity, MainCamera, PendingBuild, facing_rotation, hero_
 use super::overlay::no_overlay;
 use super::theme::{Accent, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
+use super::records::SavedRecords;
 use super::sound::{PlaySfx, Sfx};
 use super::{Game, Language, Muted, PlayerNames, Screen, Worlds};
 
@@ -49,11 +50,13 @@ impl Default for MenuChoices {
                     label: String::new(),
                     age: AgeLevel::Six,
                     character: Character::Pip,
+                    start_world: 0,
                 },
                 PlayerConfig {
                     label: String::new(),
                     age: AgeLevel::Twelve,
                     character: Character::Bolt,
+                    start_world: 0,
                 },
             ],
             row: 0,
@@ -69,6 +72,8 @@ enum Row {
     Name(usize),
     Age(usize),
     Hero(usize),
+    /// The world a player starts in, among those they have reached.
+    World(usize),
     About,
     Settings,
     Start,
@@ -81,9 +86,9 @@ impl MenuChoices {
     fn rows(&self) -> Vec<Row> {
         match self.page {
             Page::Main => {
-                let mut rows = vec![Row::Players, Row::Name(0), Row::Age(0), Row::Hero(0)];
+                let mut rows = vec![Row::Players, Row::Name(0), Row::Age(0), Row::Hero(0), Row::World(0)];
                 if self.players == 2 {
-                    rows.extend([Row::Name(1), Row::Age(1), Row::Hero(1)]);
+                    rows.extend([Row::Name(1), Row::Age(1), Row::Hero(1), Row::World(1)]);
                 }
                 rows.extend([Row::About, Row::Settings, Row::Start]);
                 rows
@@ -97,6 +102,13 @@ impl MenuChoices {
     fn open(&mut self, page: Page, focus: Row) {
         self.page = page;
         self.row = self.rows().iter().position(|r| *r == focus).unwrap_or(0);
+    }
+
+    /// The world seat `p` will start in: their choice, held back to the worlds the name
+    /// now in that seat has reached, since a name can change after the choice.
+    fn start_world(&self, p: usize, names: &PlayerNames, saved: &SavedRecords, total_worlds: usize) -> usize {
+        let startable = saved.records.startable_worlds(&SavedRecords::key(names, p), total_worlds);
+        self.configs[p].start_world.min(startable - 1)
     }
 
     /// True while a player is typing a name, so letter keys type instead of acting.
@@ -198,6 +210,8 @@ fn draw(
     language: Res<Language>,
     names: Res<PlayerNames>,
     muted: Res<Muted>,
+    worlds: Res<Worlds>,
+    saved: Res<SavedRecords>,
     old_ui: Query<Entity, With<MenuUi>>,
     old_heroes: Query<Entity, With<MenuHero>>,
 ) {
@@ -281,6 +295,10 @@ fn draw(
                 fill(t.player_hero, &[&shown_name(t, &names, *p)]),
                 choices.configs[*p].character.name().to_string(),
             ),
+            Row::World(p) => {
+                let w = choices.start_world(*p, &names, &saved, worlds.0.len());
+                (fill(t.player_start, &[&shown_name(t, &names, *p)]), format!("{} · {}", w + 1, t.world(w)))
+            }
             Row::About => (t.about.to_string(), String::new()),
             Row::Settings => (t.settings.to_string(), String::new()),
             Row::Start => (t.start.to_string(), String::new()),
@@ -350,6 +368,7 @@ fn navigate(
     mut names: ResMut<PlayerNames>,
     mut muted: ResMut<Muted>,
     worlds: Res<Worlds>,
+    saved: Res<SavedRecords>,
     mut commands: Commands,
 ) {
     // Read the typed keys every frame, so none are left over when typing starts.
@@ -409,6 +428,7 @@ fn navigate(
         let mut configs = choices.configs[..choices.players].to_vec();
         for (i, c) in configs.iter_mut().enumerate() {
             c.label = shown_name(t, &names, i);
+            c.start_world = choices.start_world(i, &names, &saved, worlds.0.len());
         }
         let game = Game(Match::new(configs, worlds.0.len()));
         let banner = turn_banner(t, &game, &worlds, t.ready.into(), None);
@@ -430,6 +450,11 @@ fn navigate(
                 choices.configs[p].age = if left { age.previous() } else { age.next() };
             }
             Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
+            Row::World(p) => {
+                let startable = saved.records.startable_worlds(&SavedRecords::key(&names, p), worlds.0.len());
+                let w = choices.start_world(p, &names, &saved, worlds.0.len());
+                choices.configs[p].start_world = if left { (w + startable - 1) % startable } else { (w + 1) % startable };
+            }
             Row::About if confirm || right => choices.open(Page::About, Row::Back),
             Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),
             _ => {}
@@ -589,6 +614,7 @@ mod tests {
             .insert_resource(Language(crate::i18n::Lang::En))
             .insert_resource(Muted::default())
             .add_message::<PlaySfx>()
+            .insert_resource(SavedRecords::in_memory(Default::default()))
             .insert_resource(Worlds(Vec::new()))
             .add_systems(Update, (navigate, count_changes).chain());
         // The first frame counts once, because the resources were just added.
@@ -631,6 +657,10 @@ mod tests {
     }
 
     fn menu_app(choices: MenuChoices) -> App {
+        menu_app_with(choices, Default::default())
+    }
+
+    fn menu_app_with(choices: MenuChoices, records: crate::domain::records::Records) -> App {
         let mut app = App::new();
         app.add_message::<KeyboardInput>()
             .add_message::<PlaySfx>()
@@ -639,7 +669,8 @@ mod tests {
             .insert_resource(PlayerNames::default())
             .insert_resource(Language(crate::i18n::Lang::En))
             .insert_resource(Muted::default())
-            .insert_resource(Worlds(Vec::new()))
+            .insert_resource(SavedRecords::in_memory(records))
+            .insert_resource(Worlds(crate::domain::levels::worlds()))
             .add_systems(Update, navigate);
         app
     }
@@ -679,5 +710,51 @@ mod tests {
         assert!(!muted(&app), "changing the language must not mute");
         // The key did act on its own row: English moved on to Spanish.
         assert_eq!(app.world().resource::<Language>().0, crate::i18n::Lang::Es);
+    }
+
+    fn start_world(app: &App, seat: usize) -> usize {
+        app.world().resource::<MenuChoices>().configs[seat].start_world
+    }
+
+    #[test]
+    fn the_start_world_cycles_through_reached_worlds_only() {
+        let mut records = crate::domain::records::Records::default();
+        records.merge("#1", 0, 2);
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Main, Row::World(0));
+        let mut app = menu_app_with(choices, records);
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            tap(&mut app, KeyCode::ArrowRight);
+            seen.push(start_world(&app, 0));
+        }
+        assert_eq!(seen, [1, 2, 0], "two worlds cleared offers worlds 1 to 3, then wraps");
+        tap(&mut app, KeyCode::ArrowLeft);
+        assert_eq!(start_world(&app, 0), 2);
+    }
+
+    #[test]
+    fn a_newcomer_can_only_start_at_the_first_world() {
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Main, Row::World(0));
+        let mut app = menu_app(choices);
+        tap(&mut app, KeyCode::ArrowRight);
+        assert_eq!(start_world(&app, 0), 0);
+    }
+
+    #[test]
+    fn starting_holds_the_choice_to_the_name_now_in_the_seat() {
+        let mut records = crate::domain::records::Records::default();
+        records.merge("lucía", 0, 4);
+        records.merge("mateo", 0, 1);
+        // Lucía picked world 5, then the seat was renamed to Mateo, who has reached world 2.
+        let mut choices = MenuChoices::default();
+        choices.configs[0].start_world = 4;
+        let mut app = menu_app_with(choices, records);
+        app.insert_resource(PlayerNames(["Mateo".into(), String::new()]))
+            .insert_resource(NextState::<Screen>::default());
+        tap(&mut app, KeyCode::Space);
+        let game = app.world().resource::<Game>();
+        assert_eq!(game.0.players[0].world, 1);
     }
 }

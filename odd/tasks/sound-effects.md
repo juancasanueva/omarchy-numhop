@@ -61,4 +61,4 @@ on every jump makes the game feel alive and makes outcomes clearer.
   now its own test that runs only Update; the menu test is renamed to
   `the_language_row_leaves_the_sound_alone`. bin/test 74 passed; clippy clean; making
   `play` return early while muted without reading makes the new test fail.
-- Pending: the user listens in a real game and tunes any sound that feels off.
+- 2026-11-20: the user played it and confirmed it works. Feature complete.

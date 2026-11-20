@@ -64,6 +64,8 @@ pub struct PlayerConfig {
     pub label: String,
     pub age: AgeLevel,
     pub character: Character,
+    /// The world this player starts the match in (0 is the first).
+    pub start_world: usize,
 }
 
 /// What a player has done inside the current world. It survives deaths so a player
@@ -89,11 +91,11 @@ pub struct Player {
 impl Player {
     fn new(config: PlayerConfig) -> Self {
         Self {
+            world: config.start_world,
             config,
             lives: START_LIVES,
             score: 0,
             gems: 0,
-            world: 0,
             finished: false,
             progress: WorldProgress::default(),
         }
@@ -134,7 +136,13 @@ impl Match {
         assert!(!configs.is_empty(), "a match needs at least one player");
         assert!(total_worlds > 0);
         Self {
-            players: configs.into_iter().map(Player::new).collect(),
+            players: configs
+                .into_iter()
+                .map(|mut c| {
+                    c.start_world = c.start_world.min(total_worlds - 1);
+                    Player::new(c)
+                })
+                .collect(),
             current: 0,
             total_worlds,
         }
@@ -263,7 +271,27 @@ mod tests {
             label: label.into(),
             age,
             character: Character::Pip,
+            start_world: 0,
         }
+    }
+
+    #[test]
+    fn players_start_in_their_chosen_world() {
+        let mut late = cfg("P2", AgeLevel::Six);
+        late.start_world = 3;
+        let mut m = Match::new(vec![cfg("P1", AgeLevel::Twelve), late], 5);
+        assert_eq!((m.players[0].world, m.players[1].world), (0, 3));
+        m.current = 1;
+        assert_eq!(m.tier(0.0), 3, "starting later means harder questions, as if they had played there");
+        m.gate_opened();
+        assert_eq!(m.gate_opened(), AfterGate::Finished(AfterDeath::SwitchTo(0)), "two gates from world 4 finish all five");
+    }
+
+    #[test]
+    fn a_start_world_past_the_end_starts_at_the_last_world() {
+        let mut far = cfg("P1", AgeLevel::Six);
+        far.start_world = 9;
+        assert_eq!(Match::new(vec![far], 5).players[0].world, 4);
     }
 
     fn duo() -> Match {

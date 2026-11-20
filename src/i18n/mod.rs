@@ -90,7 +90,7 @@ macro_rules! catalog {
 
 catalog! {
     loading, load_failed,
-    tagline, players, player_n, player_level, player_hero, start, settings, menu_hint,
+    tagline, players, player_n, player_level, player_hero, player_start, start, settings, menu_hint,
     language, sound, on, off, back, settings_hint, name_placeholder, name_hint,
     about, about_hint, about_version, about_source, about_license, about_fonts, about_inspired,
     age_six, age_eight, age_ten, age_twelve,
@@ -114,7 +114,7 @@ catalog! {
     hud_stats, status_cleared, status_out, hud_world, difficulty, hud_hint, checkpoint,
     crystal_reward,
     shortcuts_title, close_help, quit_title, quit_lost, quit_keys,
-    results, solo_cleared, great_run, tie, wins, result_line, results_hint,
+    results, solo_cleared, great_run, tie, wins, result_line, results_hint, new_best,
 }
 
 /// Replaces `{0}`, `{1}`, … in `template` with `args`.

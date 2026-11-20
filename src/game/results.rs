@@ -9,6 +9,7 @@ use super::assets::GameAssets;
 use super::banner::turn_banner;
 use super::level::PendingBuild;
 use super::overlay::no_overlay;
+use super::records::BestBefore;
 use super::theme::{AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
 use super::{Game, Language, Screen, Worlds};
@@ -24,6 +25,7 @@ fn show(
     assets: Res<GameAssets>,
     rounding: Res<Rounding>,
     language: Res<Language>,
+    best_before: Option<Res<BestBefore>>,
 ) {
     let a = &*assets;
     let t = language.t();
@@ -47,9 +49,8 @@ fn show(
             c.spawn((label(a, headline, 46.0, ui::TEXT), AccentText));
             for (place, &i) in ranking.iter().enumerate() {
                 let p = &m.players[i];
-                c.spawn(label(
-                    a,
-                    fill(
+                let before = best_before.as_ref().and_then(|b| b.0.get(i).copied()).unwrap_or(0);
+                let mut line = fill(
                         t.result_line,
                         &[
                             &t.ordinal(place),
@@ -60,10 +61,11 @@ fn show(
                             &p.score,
                             &p.gems,
                         ],
-                    ),
-                    22.0,
-                    ui::TEXT,
-                ));
+                    );
+                if p.score > before {
+                    line = format!("{line}  ·  {}", t.new_best);
+                }
+                c.spawn(label(a, line, 22.0, ui::TEXT));
             }
             c.spawn(label(a, t.results_hint, 18.0, ui::MUTED));
         })

@@ -9,6 +9,7 @@ pub static STRINGS: Strings = Strings {
     player_n: "Jugador {0}",
     player_level: "Nivel de {0}",
     player_hero: "Personaje de {0}",
+    player_start: "Mundo inicial de {0}",
     start: "Empezar",
     settings: "Ajustes",
     menu_hint: "Arriba/Abajo elegir · Izquierda/Derecha cambiar · Enter aceptar · ? ayuda",
@@ -132,6 +133,7 @@ pub static STRINGS: Strings = Strings {
     wins: "¡Gana {0}!",
     result_line: "{0}  {1} · {2}  —  {3} de {4} mundos · {5} pts · {6} gemas",
     results_hint: "Espacio jugar otra vez · Enter menú · Q salir",
+    new_best: "¡Nuevo récord!",
 
     shortcuts: [
         ("Izquierda / Derecha o A / D", "Moverse"),

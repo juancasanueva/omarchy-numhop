@@ -26,6 +26,7 @@ mod menu;
 mod overlay;
 mod play;
 mod question;
+mod records;
 mod results;
 mod sound;
 mod theme;
@@ -163,6 +164,7 @@ pub fn run() -> AppExit {
             banner::plugin,
             hud::plugin,
             results::plugin,
+            records::plugin,
             sound::plugin,
             capture::plugin,
         ))

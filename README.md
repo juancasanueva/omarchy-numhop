@@ -64,6 +64,15 @@ After every answer, the game shows the worked solution.
 The game follows the Omarchy theme accent live, and its panels use your
 Hyprland window rounding.
 
+## Progress and records
+
+numhop remembers each player's best score and how many worlds they have cleared, in
+`~/.local/share/numhop/records.toml` (or under `$XDG_DATA_HOME`). Records follow the
+name typed in the menu, ignoring case; a player without a name keeps the record of
+their seat. Each player picks a **start world** in the menu among the worlds they
+have reached, so nobody has to replay world 1 every time. Progress is saved after
+every cleared world, and the results mark any **New best!** score.
+
 ## Language
 
 numhop speaks English and Spanish (Español). Pick one under **Settings** in the
@@ -81,7 +90,7 @@ points at anything left untranslated.
 ## Build and install
 
 ```bash
-bin/test         # unit tests: math, match rules, level maps, sounds, translations, settings, theme
+bin/test         # unit tests: math, match rules, records, level maps, sounds, translations, settings, theme
 bin/build        # optimized binary in build/numhop
 bin/install      # builds the Arch package and installs it into the app launcher
 bin/screenshots  # plays a scripted session and saves a screenshot of each screen
@@ -92,10 +101,10 @@ It needs Rust (`cargo`) and a Vulkan driver, both of which Omarchy ships with.
 ## Layout
 
 ```text
-src/domain/   pure rules, no engine: math questions, match rules, level maps, sound synth, RNG
+src/domain/   pure rules, no engine: math questions, match rules, records, level maps, sound synth, RNG
 src/game/     Bevy adapter: level building, physics, questions, HUD, menus, theme
 src/i18n/     every visible string, in English (en.rs) and Spanish (es.rs)
-src/settings.rs  saved player settings
+src/settings.rs  saved player settings and records
 assets/       glTF models (from Blender) and the Noto fonts
 assets-src/   the Blender file and the script that builds every model
 pkgbuild/     PKGBUILD, desktop entry, and icon

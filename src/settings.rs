@@ -1,4 +1,5 @@
-//! Player settings, kept in `~/.config/numhop/settings.toml`.
+//! Player settings, kept in `~/.config/numhop/settings.toml`, and the players' records,
+//! kept in `~/.local/share/numhop/records.toml`.
 //!
 //! The file is tiny and flat (`language = "es"`, `player1 = "Lucía"`, `sound = "off"`), so it is read
 //! line by line rather than pulling in a TOML parser. Names are cleaned on the way in and
@@ -8,6 +9,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::domain::records::Records;
 use crate::domain::rules::clean_name;
 use crate::i18n::Lang;
 
@@ -60,12 +62,35 @@ pub fn load(path: &Path) -> Option<Settings> {
 }
 
 pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
+    write_atomically(path, &render(settings))
+}
+
+/// Writes beside the target, then renames over it, so a crash never leaves half a file.
+fn write_atomically(path: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, render(settings))?;
+    std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
+}
+
+/// `$XDG_DATA_HOME/numhop/records.toml`, or `~/.local/share/numhop/records.toml`.
+pub fn records_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+    Some(base.join("numhop").join("records.toml"))
+}
+
+/// The saved records; a missing or unreadable file means none yet.
+pub fn load_records(path: &Path) -> Records {
+    std::fs::read_to_string(path).map(|text| Records::parse(&text)).unwrap_or_default()
+}
+
+pub fn save_records(path: &Path, records: &Records) -> io::Result<()> {
+    write_atomically(path, &records.render())
 }
 
 /// The language to start with when nothing is saved: Omarchy's chosen language, then
@@ -113,6 +138,19 @@ mod tests {
         let settings = Settings { lang: Lang::Es, names: ["Lucía".into(), "Íñigo".into()], muted: true };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), Some(settings));
+        assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn records_round_trip_through_a_file_and_start_empty() {
+        let dir = temp_dir("records");
+        let path = dir.join("numhop/records.toml");
+        assert_eq!(load_records(&path), Records::default(), "no file yet means no records");
+        let mut records = Records::default();
+        records.merge("lucía", 1200, 2);
+        save_records(&path, &records).unwrap();
+        assert_eq!(load_records(&path), records);
         assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
         let _ = std::fs::remove_dir_all(&dir);
     }
