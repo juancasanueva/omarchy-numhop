@@ -30,17 +30,32 @@ const PIT_DEPTH: f32 = -4.0;
 const EPS: f32 = 0.001;
 /// Heroes are drawn a little larger than their collision box, so they read clearly.
 pub const HERO_SCALE: f32 = 1.25;
+/// How long a Grumble-caught hero lies on screen: the 1.25 s death clip and a beat
+/// to take it in, before the death banner.
+const DEATH_SECONDS: f32 = 1.6;
+
+/// A Grumble caught the hero: play stops while the death clip plays, then the usual
+/// death banner follows. Removed when the banner takes over.
+#[derive(Resource, Debug, Default)]
+pub struct Dying {
+    elapsed: f32,
+}
 
 pub fn plugin(app: &mut App) {
     app.add_systems(
         Update,
         (
-            (player_control, enemy_ai, interactions).chain().run_if(in_state(Screen::Running).and_then(no_overlay)),
+            (player_control, enemy_ai, interactions)
+                .chain()
+                .run_if(in_state(Screen::Running).and_then(no_overlay).and_then(not(resource_exists::<Dying>))),
+            dying.run_if(in_state(Screen::Running).and_then(no_overlay).and_then(resource_exists::<Dying>)),
             animate,
             camera_follow.run_if(resource_exists::<Game>),
         )
             .run_if(not(in_state(Screen::Menu))),
-    );
+    )
+    // Leaving play mid-death (quitting to the menu) must not carry the death over.
+    .add_systems(OnExit(Screen::Running), |mut commands: Commands| commands.remove_resource::<Dying>());
 }
 
 #[derive(Default, Debug)]
@@ -242,14 +257,14 @@ fn interactions(
     worlds: Res<Worlds>,
     grid: Res<Grid>,
     mut toast: ResMut<Toast>,
-    mut player: Query<(&Transform, &mut Body), With<Player>>,
+    mut player: Query<(&Transform, &mut Body, &mut Player)>,
     mut enemies: Query<(&Transform, &Body, &mut Enemy), Without<Player>>,
     gems: Query<(Entity, &Transform, &GemPickup), Without<Player>>,
     flags: Query<(&Transform, &CheckpointFlag), Without<Player>>,
     key: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
     language: Res<Language>,
 ) {
-    let Ok((ptf, mut pbody)) = player.single_mut() else { return };
+    let Ok((ptf, mut pbody, mut hero)) = player.single_mut() else { return };
     let pos = ptf.translation;
     let t = language.t();
 
@@ -269,7 +284,10 @@ fn interactions(
             game.0.stomped();
             toast.show("+100");
         } else {
-            after_death(&mut commands, t, &mut game, &worlds, t.grumble);
+            // Freeze here and let the death clip play; `dying` hands over to the banner.
+            pbody.vel = Vec2::ZERO;
+            hero.knocked_out = true;
+            commands.insert_resource(Dying::default());
             return;
         }
     }
@@ -296,6 +314,27 @@ fn interactions(
             ratio: (pos.x / grid.width as f32).min(1.0),
         });
         commands.set_state(Screen::Asking);
+    }
+}
+
+/// Counts down the death clip, keeping the Grumbles still, then applies the death.
+fn dying(
+    time: Res<Time>,
+    mut state: ResMut<Dying>,
+    mut commands: Commands,
+    mut game: ResMut<Game>,
+    worlds: Res<Worlds>,
+    language: Res<Language>,
+    mut enemies: Query<&mut Animated, With<EnemyModel>>,
+) {
+    for mut animated in &mut enemies {
+        animated.motion = Motion::Idle;
+    }
+    state.elapsed += time.delta_secs();
+    if state.elapsed >= DEATH_SECONDS {
+        commands.remove_resource::<Dying>();
+        let t = language.t();
+        after_death(&mut commands, t, &mut game, &worlds, t.grumble);
     }
 }
 
@@ -341,7 +380,10 @@ fn animate(
     let running = *screen.get() == Screen::Running;
     for (mut p, body, children) in &mut players {
         p.squash = move_toward(p.squash, 0.0, dt * 1.6);
-        let (motion, speed) = if !running {
+        // A caught hero stays down, behind the banner too, until the level is rebuilt.
+        let (motion, speed) = if p.knocked_out {
+            (Motion::Death, 1.0)
+        } else if !running {
             (Motion::Idle, 1.0)
         } else if !body.on_ground {
             (Motion::Jump, 1.0)

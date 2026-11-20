@@ -552,7 +552,8 @@ def build_cloud():
 # (rotate about world Y = swing forward/back, about Z = wag, about X = roll) and
 # converted to each bone's local space, so the numbers read the same for every bone.
 # Each clip becomes an NLA track, which the glTF exporter writes as a named
-# animation: `walk` (1 s loop), `idle` (2 s loop) and `jump` (held pose).
+# animation: `walk` (1 s loop), `idle` (2 s loop), `jump` (held pose) and, for the
+# heroes, `death` (played once, last pose held).
 
 # (bone, head, tail, parent) in Blender coordinates, character facing +X.
 RIG_PIP = [
@@ -653,8 +654,10 @@ def stash_clip(arm, action, name):
     track.strips.new(name, start, action)
 
 
-def biped_clips(arm, legs, arms, bob, lean, tail):
-    """Walk, idle and jump for a two-legged hero. `tail` is False for Bolt."""
+def biped_clips(arm, legs, arms, bob, lean, tail, back):
+    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt.
+    `back` is how far the body reaches behind the feet, so the hero lies on the
+    ground instead of sinking into it at the end of the death clip."""
     # Walk: legs and arms swing in opposition, the body dips twice per stride.
     action = new_clip(arm, "walk")
     for f in range(0, FPS + 1, 2):
@@ -706,6 +709,66 @@ def biped_clips(arm, legs, arms, bob, lean, tail):
         pose_key(arm, f, poses)
     stash_clip(arm, action, "jump")
 
+    # Death: startled, knocked back with a little hop, lands on its back, bounces
+    # once and lies still with its legs up. Played once; the last frame holds.
+    # Turning the root about -Y tips the hero backwards around its feet.
+    action = new_clip(arm, "death")
+    flat = -PI / 2
+    keys = [
+        (0, {}),
+        (3, {
+            "root": {"loc": (0, 0, 0.05)},
+            "body": {"rot": [("y", -0.25)]},
+            "head": {"rot": [("y", -0.3)]},
+            "arm.L": {"rot": [("y", -2.6)]},
+            "arm.R": {"rot": [("y", -2.6)]},
+            "leg.L": {"rot": [("y", -0.3)]},
+            "leg.R": {"rot": [("y", 0.3)]},
+        }),
+        (8, {
+            "root": {"rot": [("y", -0.6)], "loc": (0, 0, 0.35)},
+            "head": {"rot": [("y", -0.3)]},
+            "arm.L": {"rot": [("y", -2.8)]},
+            "arm.R": {"rot": [("y", -2.8)]},
+            "leg.L": {"rot": [("y", -0.5)]},
+            "leg.R": {"rot": [("y", 0.5)]},
+        }),
+        (14, {
+            "root": {"rot": [("y", flat)], "loc": (0, 0, back)},
+            "arm.L": {"rot": [("y", -1.4)]},
+            "arm.R": {"rot": [("y", -1.4)]},
+            "leg.L": {"rot": [("y", 0.6)]},
+            "leg.R": {"rot": [("y", 0.6)]},
+        }),
+        (18, {
+            "root": {"rot": [("y", flat + 0.12)], "loc": (0, 0, back + 0.1)},
+            "arm.L": {"rot": [("y", -1.8)]},
+            "arm.R": {"rot": [("y", -1.8)]},
+            "leg.L": {"rot": [("y", 0.8)]},
+            "leg.R": {"rot": [("y", 0.8)]},
+        }),
+        (22, {
+            "root": {"rot": [("y", flat)], "loc": (0, 0, back)},
+            "arm.L": {"rot": [("y", -1.6)]},
+            "arm.R": {"rot": [("y", -1.6)]},
+            "leg.L": {"rot": [("y", 0.9)]},
+            "leg.R": {"rot": [("y", 0.9)]},
+        }),
+        (30, {
+            "root": {"rot": [("y", flat)], "loc": (0, 0, back)},
+            "head": {"rot": [("x", 0.35)]},
+            "arm.L": {"rot": [("y", -1.6)]},
+            "arm.R": {"rot": [("y", -1.6)]},
+            "leg.L": {"rot": [("y", 0.9)]},
+            "leg.R": {"rot": [("y", 0.9)]},
+        }),
+    ]
+    for f, poses in keys:
+        if tail and f >= 14:
+            poses = dict(poses, tail={"rot": [("y", 0.6)]})
+        pose_key(arm, f, poses)
+    stash_clip(arm, action, "death")
+
 
 def grumble_clips(arm):
     """A legless blob: it hops and squashes, with its feet shuffling."""
@@ -736,10 +799,10 @@ def rig_character(obj):
     """Rig a character mesh and author its clips. Returns the armature."""
     if obj.name == "hero_pip":
         arm = make_armature(obj, RIG_PIP)
-        biped_clips(arm, legs=0.6, arms=0.55, bob=0.03, lean=0.08, tail=True)
+        biped_clips(arm, legs=0.6, arms=0.55, bob=0.03, lean=0.08, tail=True, back=0.2)
     elif obj.name == "hero_bolt":
         arm = make_armature(obj, RIG_BOLT)
-        biped_clips(arm, legs=0.45, arms=0.6, bob=0.02, lean=0.05, tail=False)
+        biped_clips(arm, legs=0.45, arms=0.6, bob=0.02, lean=0.05, tail=False, back=0.22)
     else:
         arm = make_armature(obj, RIG_GRUMBLE)
         grumble_clips(arm)

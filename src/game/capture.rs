@@ -14,7 +14,7 @@ use bevy::window::PrimaryWindow;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
 use super::Screen;
-use super::level::{Body, KeyPickup, Player};
+use super::level::{Body, Enemy, KeyPickup, Player};
 use super::question::Asking;
 
 #[derive(Debug, Clone)]
@@ -36,6 +36,8 @@ enum Step {
     AnswerCorrectly,
     /// Drop the player into a gap.
     Fall,
+    /// Put the player beside the nearest Grumble, which catches them.
+    TouchGrumble,
     Quit,
 }
 
@@ -176,8 +178,10 @@ fn full_tour() -> Vec<Step> {
         Wait(0.5),
         Shot("12-dusk"),
     ];
-    // Five falls use up every remaining life, ending the match.
-    for _ in 0..5 {
+    // A Grumble catches the player (the death clip plays before the banner), then
+    // four falls use up every remaining life, ending the match.
+    steps.extend([TouchGrumble, Wait(0.7), Shot("12a-knocked-out"), Wait(1.4), Tap(KeyCode::Space), Wait(0.6)]);
+    for _ in 0..4 {
         steps.extend([Fall, Wait(0.6), Tap(KeyCode::Space), Wait(0.6)]);
     }
     steps.extend([
@@ -196,6 +200,7 @@ fn drive(
     mut commands: Commands,
     mut player: Query<(&mut Transform, &mut Body), With<Player>>,
     keys_q: Query<&Transform, (With<KeyPickup>, Without<Player>)>,
+    enemies: Query<&Transform, (With<Enemy>, Without<Player>)>,
     asking: Option<Res<Asking>>,
     mut typed: MessageWriter<KeyboardInput>,
     window: Query<Entity, With<PrimaryWindow>>,
@@ -262,6 +267,17 @@ fn drive(
                 let k = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4][asking.question.correct];
                 keys.press(k);
                 script.tapped = Some(k);
+            }
+        }
+        Step::TouchGrumble => {
+            if let Ok((mut tf, mut body)) = player.single_mut() {
+                let x = tf.translation.x;
+                let nearest = enemies.iter().min_by(|a, b| (a.translation.x - x).abs().total_cmp(&(b.translation.x - x).abs()));
+                if let Some(enemy) = nearest {
+                    // Same height and just touching, so it is a catch, not a stomp.
+                    tf.translation = enemy.translation - Vec3::X * 0.5;
+                    body.vel = Vec2::ZERO;
+                }
             }
         }
         Step::Fall => {

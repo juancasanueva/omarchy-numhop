@@ -1,7 +1,7 @@
 //! Skeletal animation for the characters.
 //!
 //! Each character's glTF carries named clips made in Blender (`walk`, `idle`, and for
-//! heroes `jump`). This module builds one animation graph per character, wires it to
+//! heroes `jump` and `death`). This module builds one animation graph per character, wires it to
 //! the `AnimationPlayer` the glTF scene spawns, and blends between clips. Gameplay
 //! only says what a character is doing by setting [`Animated::motion`] and
 //! [`Animated::speed`].
@@ -36,6 +36,8 @@ pub enum Motion {
     Idle,
     Walk,
     Jump,
+    /// Played once when a Grumble catches a hero; the last pose holds.
+    Death,
 }
 
 /// What a character model is doing. Put it on the entity that holds the model's
@@ -66,8 +68,9 @@ struct Clips {
     graph: Handle<AnimationGraph>,
     idle: AnimationNodeIndex,
     walk: AnimationNodeIndex,
-    /// The Grumble never jumps, so it has no jump clip.
+    /// The Grumble never jumps or dies this way, so it has neither clip.
     jump: Option<AnimationNodeIndex>,
+    death: Option<AnimationNodeIndex>,
 }
 
 impl Clips {
@@ -76,6 +79,7 @@ impl Clips {
             Motion::Idle => self.idle,
             Motion::Walk => self.walk,
             Motion::Jump => self.jump.unwrap_or(self.idle),
+            Motion::Death => self.death.unwrap_or(self.idle),
         }
     }
 }
@@ -109,29 +113,36 @@ pub fn plugin(app: &mut App) {
 }
 
 /// Builds the graph for one character from its named clips. Returns `None` while the
-/// file is still loading, and logs once if a clip is missing.
-fn clips_for(gltf: Option<&Gltf>, graphs: &mut Assets<AnimationGraph>, file: &str) -> Option<Clips> {
+/// file is still loading, and logs once if a clip is missing. Heroes need `jump` and
+/// `death` too; the Grumble only walks and idles.
+fn clips_for(gltf: Option<&Gltf>, graphs: &mut Assets<AnimationGraph>, file: &str, hero: bool) -> Option<Clips> {
     let gltf = gltf?;
-    let clip = |name: &str| {
+    let clip = |name: &str, required: bool| {
         let found = gltf.named_animations.get(name).cloned();
-        if found.is_none() && name != "jump" {
+        if found.is_none() && required {
             error!("{file} has no '{name}' animation; re-export it from assets-src/build_models.py");
         }
         found
     };
-    let idle = clip("idle")?;
-    let walk = clip("walk")?;
-    let jump = clip("jump");
+    let idle = clip("idle", true)?;
+    let walk = clip("walk", true)?;
+    let jump = clip("jump", hero);
+    let death = clip("death", hero);
+    if hero && (jump.is_none() || death.is_none()) {
+        return None;
+    }
     let mut graph = AnimationGraph::new();
     let root = graph.root;
     let idle = graph.add_clip(idle, 1.0, root);
     let walk = graph.add_clip(walk, 1.0, root);
     let jump = jump.map(|j| graph.add_clip(j, 1.0, root));
+    let death = death.map(|d| graph.add_clip(d, 1.0, root));
     Some(Clips {
         graph: graphs.add(graph),
         idle,
         walk,
         jump,
+        death,
     })
 }
 
@@ -156,9 +167,9 @@ fn prepare_clips(
     if !handles.iter().all(|h| server.is_loaded_with_dependencies(*h)) {
         return;
     }
-    let pip = clips_for(gltfs.get(&assets.gltf_pip), &mut graphs, "hero_pip.glb");
-    let bolt = clips_for(gltfs.get(&assets.gltf_bolt), &mut graphs, "hero_bolt.glb");
-    let grumble = clips_for(gltfs.get(&assets.gltf_grumble), &mut graphs, "enemy_grumble.glb");
+    let pip = clips_for(gltfs.get(&assets.gltf_pip), &mut graphs, "hero_pip.glb", true);
+    let bolt = clips_for(gltfs.get(&assets.gltf_bolt), &mut graphs, "hero_bolt.glb", true);
+    let grumble = clips_for(gltfs.get(&assets.gltf_grumble), &mut graphs, "enemy_grumble.glb", false);
     match (pip, bolt, grumble) {
         (Some(pip), Some(bolt), Some(grumble)) => commands.insert_resource(CharacterClips { pip, bolt, grumble }),
         _ => commands.insert_resource(ClipsMissing),
@@ -202,9 +213,13 @@ fn play_motions(
         let set = clips.get(animated.rig);
         let node = set.node(animated.motion);
         if animated.playing != Some(animated.motion) {
-            // Take off quickly into a jump; ease between walking and standing.
-            let blend = if animated.motion == Motion::Jump { 80 } else { 180 };
-            transitions.play(&mut player, node, Duration::from_millis(blend)).repeat();
+            // Take off quickly into a jump or a fall; ease between walking and standing.
+            let blend = if matches!(animated.motion, Motion::Jump | Motion::Death) { 80 } else { 180 };
+            let active = transitions.play(&mut player, node, Duration::from_millis(blend));
+            // Every clip loops except death, which ends on its last pose and stays there.
+            if animated.motion != Motion::Death {
+                active.repeat();
+            }
             animated.playing = Some(animated.motion);
         }
         if let Some(active) = player.animation_mut(node) {
@@ -222,6 +237,24 @@ pub fn walk_speed(run_speed: f32, max_speed: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn clips(death: Option<AnimationNodeIndex>) -> Clips {
+        Clips {
+            graph: Handle::default(),
+            idle: AnimationNodeIndex::new(1),
+            walk: AnimationNodeIndex::new(2),
+            jump: None,
+            death,
+        }
+    }
+
+    #[test]
+    fn death_plays_its_clip_and_falls_back_to_idle_without_one() {
+        let hero = clips(Some(AnimationNodeIndex::new(4)));
+        assert_eq!(hero.node(Motion::Death), AnimationNodeIndex::new(4));
+        let grumble = clips(None);
+        assert_eq!(grumble.node(Motion::Death), grumble.idle);
+    }
 
     #[test]
     fn walk_speed_grows_with_running_and_stays_bounded() {

@@ -35,6 +35,8 @@ pub struct Player {
     pub coyote: f32,
     pub jump_buffer: f32,
     pub squash: f32,
+    /// Caught by a Grumble: the death clip plays and holds until the level is rebuilt.
+    pub knocked_out: bool,
 }
 
 /// The child entity that carries the hero model, so it can turn and squash freely.
