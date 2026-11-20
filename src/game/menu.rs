@@ -227,10 +227,17 @@ fn fit_to_window(
     let Some(fit) = fit_scale(natural, Vec2::new(window.width(), window.height())) else {
         return;
     };
-    // Text lays out a pixel differently at each scale; ignore that jitter.
-    if (scale.0 - fit).abs() > 0.005 {
-        scale.0 = fit;
+    if let Some(next) = next_scale(scale.0, fit) {
+        scale.0 = next;
     }
+}
+
+/// The scale to switch to from `current` when `fit` is wanted, if any. Text lays out a
+/// pixel differently at each scale, so small changes are ignored, except a return to
+/// the natural size, which always happens.
+fn next_scale(current: f32, fit: f32) -> Option<f32> {
+    let back_to_natural = fit == 1.0 && current != 1.0;
+    (back_to_natural || (current - fit).abs() > 0.005).then_some(fit)
 }
 
 /// The game's other screens keep their natural size.
@@ -847,6 +854,18 @@ mod tests {
     fn a_menu_wider_than_the_window_shrinks_to_fit_too() {
         let scale = fit_scale(Vec2::new(600.0, 300.0), Vec2::new(500.0, 1080.0)).unwrap();
         assert!((scale * (600.0 + FIT_MARGIN_X) - 500.0).abs() < 0.01, "got {scale}");
+    }
+
+    #[test]
+    fn a_tiny_change_in_scale_is_ignored() {
+        assert_eq!(next_scale(0.8, 0.802), None);
+        assert_eq!(next_scale(0.8, 0.7), Some(0.7));
+    }
+
+    #[test]
+    fn a_slightly_shrunk_menu_still_returns_to_its_natural_size() {
+        assert_eq!(next_scale(0.996, 1.0), Some(1.0));
+        assert_eq!(next_scale(1.0, 1.0), None);
     }
 
     #[test]
