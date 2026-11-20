@@ -284,9 +284,14 @@ mod tests {
 
     #[test]
     fn every_world_has_a_name() {
-        let count = crate::domain::levels::worlds().len();
+        let worlds = crate::domain::levels::worlds();
         for lang in Lang::ALL {
-            assert_eq!(lang.strings().worlds.len(), count, "{lang:?} world names");
+            assert_eq!(lang.strings().worlds.len(), worlds.len(), "{lang:?} world names");
+        }
+        // Level names are English, so the English catalog must list them in world order.
+        let en = Lang::En.strings();
+        for (i, world) in worlds.iter().enumerate() {
+            assert_eq!(en.world(i), world.name, "world {i} name is out of order");
         }
     }
 
