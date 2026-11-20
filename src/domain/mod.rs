@@ -4,3 +4,4 @@ pub mod levels;
 pub mod math;
 pub mod rng;
 pub mod rules;
+pub mod sound;

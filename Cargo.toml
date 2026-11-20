@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/juancasanueva/omarchy-numhop"
 
 [dependencies]
-bevy = "0.20.1"
+bevy = { version = "0.20.1", features = ["wav"] }
 
 [profile.dev]
 opt-level = 1

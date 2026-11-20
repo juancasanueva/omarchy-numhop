@@ -1,6 +1,6 @@
 //! Player settings, kept in `~/.config/numhop/settings.toml`.
 //!
-//! The file is tiny and flat (`language = "es"`, `player1 = "Lucía"`), so it is read
+//! The file is tiny and flat (`language = "es"`, `player1 = "Lucía"`, `sound = "off"`), so it is read
 //! line by line rather than pulling in a TOML parser. Names are cleaned on the way in and
 //! out, so they never hold a quote or a backslash. It is saved atomically: written beside the target, then
 //! renamed over it, so a crash never leaves a half-written file.
@@ -16,6 +16,8 @@ pub struct Settings {
     pub lang: Lang,
     /// The names the players typed; empty means "Player 1" or "Player 2".
     pub names: [String; 2],
+    /// Sound effects are off. A file without a `sound` line means sound is on.
+    pub muted: bool,
 }
 
 /// `$XDG_CONFIG_HOME/numhop/settings.toml`, or `~/.config/numhop/settings.toml`.
@@ -38,16 +40,18 @@ fn value<'a>(text: &'a str, wanted: &str) -> Option<&'a str> {
 pub fn parse(text: &str) -> Option<Settings> {
     let lang = value(text, "language").and_then(Lang::from_code)?;
     let name = |key| value(text, key).map(clean_name).unwrap_or_default();
-    Some(Settings { lang, names: [name("player1"), name("player2")] })
+    let muted = value(text, "sound") == Some("off");
+    Some(Settings { lang, names: [name("player1"), name("player2")], muted })
 }
 
 pub fn render(settings: &Settings) -> String {
     let [one, two] = &settings.names;
     format!(
-        "# numhop settings\nlanguage = \"{}\"\nplayer1 = \"{}\"\nplayer2 = \"{}\"\n",
+        "# numhop settings\nlanguage = \"{}\"\nplayer1 = \"{}\"\nplayer2 = \"{}\"\nsound = \"{}\"\n",
         settings.lang.code(),
         clean_name(one),
-        clean_name(two)
+        clean_name(two),
+        if settings.muted { "off" } else { "on" }
     )
 }
 
@@ -88,6 +92,7 @@ pub fn load_or_default() -> Settings {
     Settings {
         lang: default_lang(omarchy.as_deref(), locale.as_deref()),
         names: Default::default(),
+        muted: false,
     }
 }
 
@@ -105,7 +110,7 @@ mod tests {
     fn round_trips_through_a_file() {
         let dir = temp_dir("roundtrip");
         let path = dir.join("numhop/settings.toml");
-        let settings = Settings { lang: Lang::Es, names: ["Lucía".into(), "Íñigo".into()] };
+        let settings = Settings { lang: Lang::Es, names: ["Lucía".into(), "Íñigo".into()], muted: true };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), Some(settings));
         assert!(!path.with_extension("toml.tmp").exists(), "temp file left behind");
@@ -116,15 +121,23 @@ mod tests {
     fn unknown_or_missing_language_is_ignored() {
         assert_eq!(parse("language = \"klingon\""), None);
         assert_eq!(parse("# empty"), None);
-        assert_eq!(parse("language = \"es\""), Some(Settings { lang: Lang::Es, names: Default::default() }));
+        assert_eq!(parse("language = \"es\""), Some(Settings { lang: Lang::Es, names: Default::default(), muted: false }));
     }
 
     #[test]
     fn names_are_cleaned_when_read_and_written() {
         let settings = parse("language = \"en\"\nplayer1 = \"  Ana   María \"\nplayer2 = \"Bob\\\\\"").unwrap();
         assert_eq!(settings.names, ["Ana María".to_string(), "Bob".to_string()]);
-        let messy = Settings { lang: Lang::En, names: ["Zoe\"".into(), String::new()] };
-        assert_eq!(render(&messy), "# numhop settings\nlanguage = \"en\"\nplayer1 = \"Zoe\"\nplayer2 = \"\"\n");
+        let messy = Settings { lang: Lang::En, names: ["Zoe\"".into(), String::new()], muted: false };
+        assert_eq!(render(&messy), "# numhop settings\nlanguage = \"en\"\nplayer1 = \"Zoe\"\nplayer2 = \"\"\nsound = \"on\"\n");
+    }
+
+    #[test]
+    fn sound_is_on_unless_the_file_says_off() {
+        assert!(!parse("language = \"en\"").unwrap().muted, "older files have no sound line");
+        assert!(!parse("language = \"en\"\nsound = \"on\"").unwrap().muted);
+        assert!(!parse("language = \"en\"\nsound = \"loud\"").unwrap().muted);
+        assert!(parse("language = \"en\"\nsound = \"off\"").unwrap().muted);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use bevy::audio::Volume;
 use bevy::prelude::*;
 use bevy::window::{Window, WindowPlugin};
 
@@ -12,6 +13,8 @@ use crate::domain::rng::Rng;
 use crate::domain::rules::Match;
 use crate::i18n::{Lang, Strings};
 use crate::settings::{self, Settings};
+
+pub use sound::Muted;
 
 mod animation;
 mod assets;
@@ -24,6 +27,7 @@ mod overlay;
 mod play;
 mod question;
 mod results;
+mod sound;
 mod theme;
 mod ui;
 
@@ -65,12 +69,14 @@ pub struct PlayerNames(pub [String; 2]);
 
 /// The settings to start with, and whether changes are saved. `NUMHOP_LANG` picks the
 /// language for one run without touching saved settings, and scripted screenshots
-/// (`NUMHOP_CAPTURE`) start with blank names, so neither rewrites the player's choices.
+/// (`NUMHOP_CAPTURE`) start with blank names and sound shown on, so neither rewrites
+/// the player's choices.
 fn initial_settings() -> (Settings, bool) {
     let mut settings = settings::load_or_default();
     let mut persist = true;
-    if std::env::var_os("NUMHOP_CAPTURE").is_some() {
+    if capturing() {
         settings.names = Default::default();
+        settings.muted = false;
         persist = false;
     }
     if let Some(lang) = std::env::var("NUMHOP_LANG").ok().and_then(|c| Lang::from_code(&c)) {
@@ -80,16 +86,22 @@ fn initial_settings() -> (Settings, bool) {
     (settings, persist)
 }
 
+/// Scripted screenshots are running (`bin/screenshots`).
+fn capturing() -> bool {
+    std::env::var_os("NUMHOP_CAPTURE").is_some()
+}
+
 #[derive(Resource)]
 struct PersistSettings(bool);
 
-fn save_settings(language: Res<Language>, names: Res<PlayerNames>, persist: Res<PersistSettings>) {
-    if !persist.0 || language.is_added() || names.is_added() {
+fn save_settings(language: Res<Language>, names: Res<PlayerNames>, muted: Res<Muted>, persist: Res<PersistSettings>) {
+    if !persist.0 || language.is_added() || names.is_added() || muted.is_added() {
         return;
     }
     let settings = Settings {
         lang: language.0,
         names: names.0.clone(),
+        muted: muted.0,
     };
     if let Some(path) = settings::settings_path()
         && let Err(err) = settings::save(&path, &settings)
@@ -127,10 +139,17 @@ pub fn run() -> AppExit {
         .insert_resource(ClearColor(Color::srgb(0.53, 0.78, 0.96)))
         .insert_resource(Language(settings.lang))
         .insert_resource(PlayerNames(settings.names))
+        .insert_resource(Muted(settings.muted))
+        // Scripted screenshots play silently, without changing what the menu shows.
+        .insert_resource(GlobalVolume::new(if capturing() { Volume::SILENT } else { Volume::Linear(1.0) }))
         .insert_resource(PersistSettings(persist))
         .add_systems(
             Update,
-            save_settings.run_if(resource_changed::<Language>.or_else(resource_changed::<PlayerNames>)),
+            save_settings.run_if(
+                resource_changed::<Language>
+                    .or_else(resource_changed::<PlayerNames>)
+                    .or_else(resource_changed::<Muted>),
+            ),
         )
         .add_plugins((
             assets::plugin,
@@ -144,6 +163,7 @@ pub fn run() -> AppExit {
             banner::plugin,
             hud::plugin,
             results::plugin,
+            sound::plugin,
             capture::plugin,
         ))
         .run()

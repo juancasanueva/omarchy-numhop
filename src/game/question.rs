@@ -18,6 +18,7 @@ use super::banner::{after_death, after_gate};
 use super::hud::Toast;
 use super::level::{CrystalBlock, Grid, LevelEntity, cell_center};
 use super::overlay::no_overlay;
+use super::sound::{PlaySfx, Sfx};
 use super::theme::{Accent, AccentBackground, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label, symbol_font};
 use super::{Game, GameRng, Language, Screen, Worlds};
@@ -95,6 +96,7 @@ fn open(
     let question = math::generate(age, tier, &mut rng.0);
     debug_assert!(math::validate(&question).is_ok());
     spawn_overlay(&mut commands, &assets, language.t(), &question, request.kind, rounding.0, &game);
+    commands.write_message(PlaySfx(Sfx::Ask));
     commands.insert_resource(Asking {
         kind: request.kind,
         question,
@@ -367,6 +369,7 @@ fn stacked_fraction(commands: &mut Commands, a: &GameAssets, num: i64, den: i64)
 fn tick(
     time: Res<Time>,
     mut asking: ResMut<Asking>,
+    mut commands: Commands,
     mut bars: Query<&mut Node, With<TimerBar>>,
     mut texts: Query<(&mut Text, &mut TextColor), With<TimerText>>,
 ) {
@@ -385,6 +388,7 @@ fn tick(
     }
     if left <= 0.0 {
         asking.outcome = Some(Outcome::TimeUp);
+        commands.write_message(PlaySfx(Sfx::TimeUp));
     }
 }
 
@@ -439,6 +443,8 @@ fn answer_input(
     let Some(choice) = choice else { return };
     asking.selected = choice;
     asking.outcome = Some(if asking.question.is_correct(choice) { Outcome::Right } else { Outcome::Wrong(choice) });
+    let sfx = if asking.outcome == Some(Outcome::Right) { Sfx::Right } else { Sfx::Wrong };
+    commands.write_message(PlaySfx(sfx));
 
     // Replace the hint with the verdict and the worked solution.
     let a = &*assets;

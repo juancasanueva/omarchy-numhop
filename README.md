@@ -17,6 +17,12 @@ blends between them as they move, and speeds the walk up as they run. Heroes als
 have a `death` clip: when a Grumble catches one, play stops while they tumble over,
 then the turn moves on.
 
+The sound effects are original too: there are no audio files. Each one is a few
+square and triangle tones, mixed when the game starts (`src/domain/sound.rs`).
+Jumps, gems, stomps, questions, right and wrong answers, checkpoints, cleared
+worlds and the menu all have their own. Turn them off with **Sound** under
+**Settings**; the choice is saved with the others.
+
 ## How it plays
 
 - **One or two players.** Each starts with three lives. Solo players earn an extra
@@ -62,7 +68,7 @@ Hyprland window rounding.
 
 numhop speaks English and Spanish (Español). Pick one under **Settings** in the
 main menu; the menu switches at once and the choice is saved to
-`~/.config/numhop/settings.toml`, together with the players' names. On first run it follows Omarchy's language
+`~/.config/numhop/settings.toml`, together with the players' names and the sound switch. On first run it follows Omarchy's language
 (`~/.config/omarchy/language`), then your system locale, then English.
 `NUMHOP_LANG=es numhop` picks a language for one run without saving it.
 
@@ -75,7 +81,7 @@ points at anything left untranslated.
 ## Build and install
 
 ```bash
-bin/test         # unit tests: math, match rules, level maps, translations, settings, theme
+bin/test         # unit tests: math, match rules, level maps, sounds, translations, settings, theme
 bin/build        # optimized binary in build/numhop
 bin/install      # builds the Arch package and installs it into the app launcher
 bin/screenshots  # plays a scripted session and saves a screenshot of each screen
@@ -86,7 +92,7 @@ It needs Rust (`cargo`) and a Vulkan driver, both of which Omarchy ships with.
 ## Layout
 
 ```text
-src/domain/   pure rules, no engine: math questions, match rules, level maps, RNG
+src/domain/   pure rules, no engine: math questions, match rules, level maps, sound synth, RNG
 src/game/     Bevy adapter: level building, physics, questions, HUD, menus, theme
 src/i18n/     every visible string, in English (en.rs) and Spanish (es.rs)
 src/settings.rs  saved player settings

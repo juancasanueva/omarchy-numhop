@@ -9,6 +9,7 @@ use crate::i18n::{Strings, fill};
 use super::assets::GameAssets;
 use super::level::PendingBuild;
 use super::overlay::no_overlay;
+use super::sound::{PlaySfx, Sfx};
 use super::theme::{AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
 use super::{Game, Language, Screen, Worlds};
@@ -61,7 +62,11 @@ pub fn turn_banner(t: &Strings, game: &Game, worlds: &Worlds, title: String, ext
 pub fn after_death(commands: &mut Commands, t: &Strings, game: &mut Game, worlds: &Worlds, reason: &str) {
     let who = player_tag(game, game.0.current);
     let lives = game.0.player().lives;
-    let banner = match game.0.died() {
+    let outcome = game.0.died();
+    if outcome == AfterDeath::GameOver {
+        commands.write_message(PlaySfx(Sfx::GameOver));
+    }
+    let banner = match outcome {
         AfterDeath::Continue => turn_banner(t, game, worlds, reason.to_string(), Some(fill(t.lost_life, &[&who]))),
         AfterDeath::SwitchTo(next) => {
             let extra = fill(
@@ -86,6 +91,7 @@ pub fn after_death(commands: &mut Commands, t: &Strings, game: &mut Game, worlds
 /// Applies an opened gate to the match and moves to the right banner.
 pub fn after_gate(commands: &mut Commands, t: &Strings, game: &mut Game, worlds: &Worlds) {
     let who = player_tag(game, game.0.current);
+    commands.write_message(PlaySfx(Sfx::WorldCleared));
     let banner = match game.0.gate_opened() {
         AfterGate::NextWorld => turn_banner(t, game, worlds, t.world_cleared.into(), None),
         AfterGate::Finished(AfterDeath::SwitchTo(next)) => {
@@ -133,8 +139,9 @@ fn show(
         .add_child(card);
 }
 
-fn proceed(keys: Res<ButtonInput<KeyCode>>, banner: Res<Banner>, mut next: ResMut<NextState<Screen>>) {
+fn proceed(keys: Res<ButtonInput<KeyCode>>, banner: Res<Banner>, mut next: ResMut<NextState<Screen>>, mut commands: Commands) {
     if keys.any_just_pressed([KeyCode::Space, KeyCode::Enter]) {
+        commands.write_message(PlaySfx(Sfx::MenuSelect));
         next.set(match banner.then {
             Then::Play => Screen::Running,
             Then::Results => Screen::Results,

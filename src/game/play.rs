@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use super::animation::{Animated, Motion, walk_speed};
 use super::banner::after_death;
 use super::hud::Toast;
+use super::sound::{PlaySfx, Sfx};
 use super::level::{
     Bob, Body, Bump, CheckpointFlag, CrystalBlock, Drift, Enemy, EnemyModel, GemPickup, Grid, KeyPickup, MainCamera,
     Player, PlayerModel, Spin, facing_rotation,
@@ -151,6 +152,7 @@ fn player_control(
     p.jump_buffer = if keys.any_just_pressed(jump_keys) { JUMP_BUFFER } else { (p.jump_buffer - dt).max(0.0) };
     if p.jump_buffer > 0.0 && p.coyote > 0.0 {
         body.vel.y = JUMP_SPEED;
+        commands.write_message(PlaySfx(Sfx::Jump));
         p.jump_buffer = 0.0;
         p.coyote = 0.0;
         p.squash = -0.25;
@@ -269,6 +271,7 @@ fn interactions(
     let t = language.t();
 
     if pos.y < PIT_DEPTH {
+        commands.write_message(PlaySfx(Sfx::Fall));
         after_death(&mut commands, t, &mut game, &worlds, t.fell);
         return;
     }
@@ -282,11 +285,13 @@ fn interactions(
             enemy.squashed = Some(0.35);
             pbody.vel.y = STOMP_BOUNCE;
             game.0.stomped();
+            commands.write_message(PlaySfx(Sfx::Stomp));
             toast.show("+100");
         } else {
             // Freeze here and let the death clip play; `dying` hands over to the banner.
             pbody.vel = Vec2::ZERO;
             hero.knocked_out = true;
+            commands.write_message(PlaySfx(Sfx::Caught));
             commands.insert_resource(Dying::default());
             return;
         }
@@ -296,11 +301,13 @@ fn interactions(
     for (entity, gtf, gem) in &gems {
         if center.distance(gtf.translation) < 0.7 && game.0.gem_collected(gem.index) {
             commands.entity(entity).despawn();
+            commands.write_message(PlaySfx(Sfx::Gem));
         }
     }
 
     for (ftf, flag) in &flags {
         if pos.x >= ftf.translation.x && game.0.checkpoint_reached(flag.index) {
+            commands.write_message(PlaySfx(Sfx::Checkpoint));
             toast.show(t.checkpoint);
         }
     }

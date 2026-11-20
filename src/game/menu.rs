@@ -17,7 +17,8 @@ use super::level::{LevelEntity, MainCamera, PendingBuild, facing_rotation, hero_
 use super::overlay::no_overlay;
 use super::theme::{Accent, AccentBorder, AccentText, Rounding};
 use super::ui::{self, label};
-use super::{Game, Language, PlayerNames, Screen, Worlds};
+use super::sound::{PlaySfx, Sfx};
+use super::{Game, Language, Muted, PlayerNames, Screen, Worlds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Page {
@@ -72,6 +73,7 @@ enum Row {
     Settings,
     Start,
     Language,
+    Sound,
     Back,
 }
 
@@ -86,7 +88,7 @@ impl MenuChoices {
                 rows.extend([Row::About, Row::Settings, Row::Start]);
                 rows
             }
-            Page::Settings => vec![Row::Language, Row::Back],
+            Page::Settings => vec![Row::Language, Row::Sound, Row::Back],
             // The About page is read-only: its lines are drawn above the one button.
             Page::About => vec![Row::Back],
         }
@@ -139,9 +141,9 @@ pub fn plugin(app: &mut App) {
         );
 }
 
-/// The menu redraws when a choice, the language, or a name changes.
-fn menu_changed(choices: Res<MenuChoices>, language: Res<Language>, names: Res<PlayerNames>) -> bool {
-    choices.is_changed() || language.is_changed() || names.is_changed()
+/// The menu redraws when a choice, the language, a name, or the sound switch changes.
+fn menu_changed(choices: Res<MenuChoices>, language: Res<Language>, names: Res<PlayerNames>, muted: Res<Muted>) -> bool {
+    choices.is_changed() || language.is_changed() || names.is_changed() || muted.is_changed()
 }
 
 fn enter(
@@ -195,6 +197,7 @@ fn draw(
     accent: Res<Accent>,
     language: Res<Language>,
     names: Res<PlayerNames>,
+    muted: Res<Muted>,
     old_ui: Query<Entity, With<MenuUi>>,
     old_heroes: Query<Entity, With<MenuHero>>,
 ) {
@@ -282,6 +285,7 @@ fn draw(
             Row::Settings => (t.settings.to_string(), String::new()),
             Row::Start => (t.start.to_string(), String::new()),
             Row::Language => (t.language.to_string(), language.0.native_name().to_string()),
+            Row::Sound => (t.sound.to_string(), if muted.0 { t.off } else { t.on }.to_string()),
             Row::Back => (t.back.to_string(), String::new()),
         };
         // The main action of each page stands out, centered and larger.
@@ -344,6 +348,7 @@ fn navigate(
     mut choices: ResMut<MenuChoices>,
     mut language: ResMut<Language>,
     mut names: ResMut<PlayerNames>,
+    mut muted: ResMut<Muted>,
     worlds: Res<Worlds>,
     mut commands: Commands,
 ) {
@@ -364,29 +369,41 @@ fn navigate(
     }
     let rows = choices.rows();
     let row = rows[choices.row.min(rows.len() - 1)];
-    if keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyS, KeyCode::Tab]) {
+    let down = keys.any_just_pressed([KeyCode::ArrowDown, KeyCode::KeyS, KeyCode::Tab]);
+    let up = keys.any_just_pressed([KeyCode::ArrowUp, KeyCode::KeyW]);
+    if down {
         choices.row = (choices.row + 1) % rows.len();
     }
-    if keys.any_just_pressed([KeyCode::ArrowUp, KeyCode::KeyW]) {
+    if up {
         choices.row = (choices.row + rows.len() - 1) % rows.len();
     }
     let left = keys.any_just_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
     let right = keys.any_just_pressed([KeyCode::ArrowRight, KeyCode::KeyD]);
     let confirm = keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]);
+    let start = choices.page == Page::Main && (keys.just_pressed(KeyCode::Space) || (confirm && row == Row::Start));
+    let leave = choices.page != Page::Main && keys.any_just_pressed([KeyCode::Escape, KeyCode::Backspace]);
+
+    // Confirming and leaving click; moving and changing a value tick.
+    if start || confirm || leave {
+        commands.write_message(PlaySfx(Sfx::MenuSelect));
+    } else if up || down || left || right {
+        commands.write_message(PlaySfx(Sfx::MenuMove));
+    }
 
     if choices.page != Page::Main {
-        let back = keys.any_just_pressed([KeyCode::Escape, KeyCode::Backspace]) || (confirm && row == Row::Back);
+        let back = leave || (confirm && row == Row::Back);
         if back {
             // Return to the row that opened this page.
             let from = if choices.page == Page::Settings { Row::Settings } else { Row::About };
             choices.open(Page::Main, from);
         } else if row == Row::Language && (left || right || confirm) {
             language.0 = if left { language.0.previous() } else { language.0.next() };
+        } else if row == Row::Sound && (left || right || confirm) {
+            muted.0 = !muted.0;
         }
         return;
     }
 
-    let start = keys.just_pressed(KeyCode::Space) || (confirm && row == Row::Start);
     if start {
         let t = language.t();
         let mut configs = choices.configs[..choices.players].to_vec();
@@ -570,6 +587,8 @@ mod tests {
             .insert_resource(MenuChoices { editing: Some((0, "Lu".into())), ..default() })
             .insert_resource(PlayerNames::default())
             .insert_resource(Language(crate::i18n::Lang::En))
+            .insert_resource(Muted::default())
+            .add_message::<PlaySfx>()
             .insert_resource(Worlds(Vec::new()))
             .add_systems(Update, (navigate, count_changes).chain());
         // The first frame counts once, because the resources were just added.
