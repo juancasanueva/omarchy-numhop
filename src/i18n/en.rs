@@ -15,6 +15,13 @@ pub static STRINGS: Strings = Strings {
     language: "Language",
     back: "Back",
     settings_hint: "Left/Right change · Esc back",
+    about: "About",
+    about_hint: "Esc back",
+    about_version: "Version",
+    about_source: "Source code",
+    about_license: "License",
+    about_fonts: "Fonts",
+    about_inspired: "Inspired by",
     name_placeholder: "Type a name",
     name_hint: "Type a name · Backspace delete · Enter done · Esc cancel",
 

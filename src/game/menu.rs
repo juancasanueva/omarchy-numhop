@@ -24,6 +24,7 @@ enum Page {
     #[default]
     Main,
     Settings,
+    About,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -67,6 +68,7 @@ enum Row {
     Name(usize),
     Age(usize),
     Hero(usize),
+    About,
     Settings,
     Start,
     Language,
@@ -81,10 +83,12 @@ impl MenuChoices {
                 if self.players == 2 {
                     rows.extend([Row::Name(1), Row::Age(1), Row::Hero(1)]);
                 }
-                rows.extend([Row::Settings, Row::Start]);
+                rows.extend([Row::About, Row::Settings, Row::Start]);
                 rows
             }
             Page::Settings => vec![Row::Language, Row::Back],
+            // The About page is read-only: its lines are drawn above the one button.
+            Page::About => vec![Row::Back],
         }
     }
 
@@ -97,6 +101,19 @@ impl MenuChoices {
     pub fn typing(&self) -> bool {
         self.editing.is_some()
     }
+}
+
+/// The About page: the version, where the code lives, and the licenses. The version,
+/// repository and license come from Cargo.toml, so they never drift from the package.
+fn about_lines(t: &Strings) -> [(&'static str, String); 5] {
+    let repo = env!("CARGO_PKG_REPOSITORY");
+    [
+        (t.about_version, env!("CARGO_PKG_VERSION").to_string()),
+        (t.about_source, repo.trim_start_matches("https://").to_string()),
+        (t.about_license, env!("CARGO_PKG_LICENSE").to_string()),
+        (t.about_fonts, "Noto · Apache 2.0".to_string()),
+        (t.about_inspired, "github.com/pgarevalo/mariomath".to_string()),
+    ]
 }
 
 /// The name a player goes by: what they typed, or "Player 1" when they typed nothing.
@@ -215,11 +232,31 @@ fn draw(
             let subtitle = match choices.page {
                 Page::Main => t.tagline,
                 Page::Settings => t.settings,
+                Page::About => t.about,
             };
             c.spawn(label(a, subtitle, 20.0, ui::MUTED));
         })
         .id();
 
+    if choices.page == Page::About {
+        for (name, value) in about_lines(t) {
+            let line = commands
+                .spawn(Node {
+                    width: percent(100),
+                    justify_content: JustifyContent::SpaceBetween,
+                    column_gap: px(30),
+                    // Rows have a 2px border, so pad 2px more to line up with them.
+                    padding: UiRect::axes(px(18), px(8)),
+                    ..default()
+                })
+                .with_children(|r| {
+                    r.spawn(label(a, name, 20.0, ui::MUTED));
+                    r.spawn(label(a, value, 20.0, ui::TEXT));
+                })
+                .id();
+            commands.entity(card).add_child(line);
+        }
+    }
     for (i, row) in rows.iter().enumerate() {
         let selected = i == choices.row;
         let (name, value) = match row {
@@ -241,6 +278,7 @@ fn draw(
                 fill(t.player_hero, &[&shown_name(t, &names, *p)]),
                 choices.configs[*p].character.name().to_string(),
             ),
+            Row::About => (t.about.to_string(), String::new()),
             Row::Settings => (t.settings.to_string(), String::new()),
             Row::Start => (t.start.to_string(), String::new()),
             Row::Language => (t.language.to_string(), language.0.native_name().to_string()),
@@ -279,6 +317,7 @@ fn draw(
         Page::Main if choices.typing() => t.name_hint,
         Page::Main => t.menu_hint,
         Page::Settings => t.settings_hint,
+        Page::About => t.about_hint,
     };
     commands.entity(card).with_child(label(a, hint, 15.0, ui::MUTED));
 
@@ -335,10 +374,12 @@ fn navigate(
     let right = keys.any_just_pressed([KeyCode::ArrowRight, KeyCode::KeyD]);
     let confirm = keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]);
 
-    if choices.page == Page::Settings {
+    if choices.page != Page::Main {
         let back = keys.any_just_pressed([KeyCode::Escape, KeyCode::Backspace]) || (confirm && row == Row::Back);
         if back {
-            choices.open(Page::Main, Row::Settings);
+            // Return to the row that opened this page.
+            let from = if choices.page == Page::Settings { Row::Settings } else { Row::About };
+            choices.open(Page::Main, from);
         } else if row == Row::Language && (left || right || confirm) {
             language.0 = if left { language.0.previous() } else { language.0.next() };
         }
@@ -372,6 +413,7 @@ fn navigate(
                 choices.configs[p].age = if left { age.previous() } else { age.next() };
             }
             Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
+            Row::About if confirm || right => choices.open(Page::About, Row::Back),
             Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),
             _ => {}
         }
@@ -543,6 +585,22 @@ mod tests {
         let changes = app.world().resource::<Changes>();
         assert_eq!((changes.choices, changes.names), (2, 1));
         assert_eq!(app.world().resource::<MenuChoices>().editing, Some((0, "Luc".into())));
+    }
+
+    #[test]
+    fn about_opens_from_the_menu_and_shows_the_package_facts() {
+        let mut choices = MenuChoices::default();
+        let rows = choices.rows();
+        let about = rows.iter().position(|r| *r == Row::About).unwrap();
+        assert_eq!(rows[about + 1], Row::Settings, "About sits just above Settings");
+        choices.open(Page::About, Row::Back);
+        assert_eq!(choices.rows(), vec![Row::Back], "only Back is selectable on About");
+
+        let t = crate::i18n::Lang::En.strings();
+        let lines = about_lines(t);
+        assert_eq!(lines[0].1, env!("CARGO_PKG_VERSION"));
+        assert_eq!(lines[1].1, "github.com/juancasanueva/omarchy-numhop");
+        assert_eq!(lines[2].1, "MIT");
     }
 
     #[test]

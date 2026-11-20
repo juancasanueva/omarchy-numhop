@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "A 3D math platformer for Omarchy"
 license = "MIT"
+repository = "https://github.com/juancasanueva/omarchy-numhop"
 
 [dependencies]
 bevy = "0.20.1"
