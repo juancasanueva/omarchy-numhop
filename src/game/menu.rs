@@ -7,6 +7,7 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 
 use crate::domain::math::AgeLevel;
+use crate::domain::records::{Records, display_name};
 use crate::domain::rules::{Character, MAX_NAME_CHARS, Match, PlayerConfig, clean_name, name_char_allowed};
 use crate::i18n::{Strings, fill};
 
@@ -27,6 +28,7 @@ enum Page {
     Main,
     Settings,
     About,
+    Scores,
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -74,6 +76,7 @@ enum Row {
     Hero(usize),
     /// The world a player starts in, among those they have reached.
     World(usize),
+    Scores,
     About,
     Settings,
     Start,
@@ -90,12 +93,14 @@ impl MenuChoices {
                 if self.players == 2 {
                     rows.extend([Row::Name(1), Row::Age(1), Row::Hero(1), Row::World(1)]);
                 }
-                rows.extend([Row::About, Row::Settings, Row::Start]);
+                rows.extend([Row::Scores, Row::About, Row::Settings, Row::Start]);
                 rows
             }
             Page::Settings => vec![Row::Language, Row::Sound, Row::Back],
             // The About page is read-only: its lines are drawn above the one button.
-            Page::About => vec![Row::Back],
+            // The About and High scores pages are read-only: their lines are drawn above
+            // the one button.
+            Page::About | Page::Scores => vec![Row::Back],
         }
     }
 
@@ -110,6 +115,12 @@ impl MenuChoices {
     fn effective_start_world(&self, p: usize, names: &PlayerNames, saved: &SavedRecords, total_worlds: usize) -> (usize, usize) {
         let startable = saved.records.startable_worlds(&SavedRecords::key(names, p), total_worlds);
         (self.configs[p].start_world.min(startable - 1), startable)
+    }
+
+    /// Starts typing a name in the first seat, as Enter on its row would.
+    #[cfg(test)]
+    pub fn start_typing_for_test(&mut self) {
+        self.editing = Some((0, String::new()));
     }
 
     /// True while a player is typing a name, so letter keys type instead of acting.
@@ -129,6 +140,28 @@ fn about_lines(t: &Strings) -> [(&'static str, String); 5] {
         (t.about_fonts, "Noto · Apache 2.0".to_string()),
         (t.about_inspired, "github.com/pgarevalo/mariomath".to_string()),
     ]
+}
+
+/// How many players the High scores page lists.
+const SCORES_SHOWN: usize = 8;
+
+/// The High scores page: place and name on the left, best score and worlds cleared on
+/// the right; a single line saying there are none yet when nobody has played.
+fn score_lines(t: &Strings, records: &Records, total_worlds: usize) -> Vec<(String, String)> {
+    let ranked = records.ranked();
+    if ranked.is_empty() {
+        return vec![(t.scores_empty.to_string(), String::new())];
+    }
+    ranked
+        .into_iter()
+        .take(SCORES_SHOWN)
+        .enumerate()
+        .map(|(place, (key, record))| {
+            let name = display_name(key).unwrap_or_else(|seat| t.player(seat));
+            let worlds = record.worlds_cleared.min(total_worlds);
+            (format!("{}. {name}", place + 1), fill(t.score_value, &[&record.best_score, &worlds, &total_worlds]))
+        })
+        .collect()
 }
 
 /// The name a player goes by: what they typed, or "Player 1" when they typed nothing.
@@ -251,13 +284,19 @@ fn draw(
                 Page::Main => t.tagline,
                 Page::Settings => t.settings,
                 Page::About => t.about,
+                Page::Scores => t.high_scores,
             };
             c.spawn(label(a, subtitle, 20.0, ui::MUTED));
         })
         .id();
 
-    if choices.page == Page::About {
-        for (name, value) in about_lines(t) {
+    let page_lines: Vec<(String, String)> = match choices.page {
+        Page::About => about_lines(t).into_iter().map(|(n, v)| (n.to_string(), v)).collect(),
+        Page::Scores => score_lines(t, &saved.records, worlds.0.len()),
+        _ => Vec::new(),
+    };
+    {
+        for (name, value) in page_lines {
             let line = commands
                 .spawn(Node {
                     width: percent(100),
@@ -300,6 +339,7 @@ fn draw(
                 let (w, _) = choices.effective_start_world(*p, &names, &saved, worlds.0.len());
                 (fill(t.player_start, &[&shown_name(t, &names, *p)]), format!("{} · {}", w + 1, t.world(w)))
             }
+            Row::Scores => (t.high_scores.to_string(), String::new()),
             Row::About => (t.about.to_string(), String::new()),
             Row::Settings => (t.settings.to_string(), String::new()),
             Row::Start => (t.start.to_string(), String::new()),
@@ -340,7 +380,7 @@ fn draw(
         Page::Main if choices.typing() => t.name_hint,
         Page::Main => t.menu_hint,
         Page::Settings => t.settings_hint,
-        Page::About => t.about_hint,
+        Page::About | Page::Scores => t.about_hint,
     };
     commands.entity(card).with_child(label(a, hint, 15.0, ui::MUTED));
 
@@ -414,7 +454,11 @@ fn navigate(
         let back = leave || (confirm && row == Row::Back);
         if back {
             // Return to the row that opened this page.
-            let from = if choices.page == Page::Settings { Row::Settings } else { Row::About };
+            let from = match choices.page {
+                Page::Settings => Row::Settings,
+                Page::Scores => Row::Scores,
+                _ => Row::About,
+            };
             choices.open(Page::Main, from);
         } else if row == Row::Language && (left || right || confirm) {
             language.0 = if left { language.0.previous() } else { language.0.next() };
@@ -457,6 +501,7 @@ fn navigate(
                 let previous = if w == 0 { startable - 1 } else { w - 1 };
                 choices.configs[p].start_world = if left { previous } else { (w + 1) % startable };
             }
+            Row::Scores if confirm || right => choices.open(Page::Scores, Row::Back),
             Row::About if confirm || right => choices.open(Page::About, Row::Back),
             Row::Settings if confirm || right => choices.open(Page::Settings, Row::Language),
             _ => {}
@@ -758,5 +803,31 @@ mod tests {
         tap(&mut app, KeyCode::Space);
         let game = app.world().resource::<Game>();
         assert_eq!(game.0.players[0].world, 1);
+    }
+
+    #[test]
+    fn high_scores_open_from_the_menu_and_esc_returns_to_their_row() {
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Main, Row::Scores);
+        let mut app = menu_app(choices);
+        tap(&mut app, KeyCode::Enter);
+        assert_eq!(app.world().resource::<MenuChoices>().page, Page::Scores);
+        tap(&mut app, KeyCode::Escape);
+        let choices = app.world().resource::<MenuChoices>();
+        assert_eq!(choices.page, Page::Main);
+        assert_eq!(choices.rows()[choices.row], Row::Scores, "back on the row that opened the page");
+    }
+
+    #[test]
+    fn score_lines_rank_players_and_name_empty_seats() {
+        let t = crate::i18n::Lang::En.strings();
+        assert_eq!(score_lines(t, &Records::default(), 5), vec![(t.scores_empty.to_string(), String::new())]);
+
+        let mut records = Records::default();
+        records.merge("lucía", 700, 2);
+        records.merge("#2", 1200, 9);
+        let lines = score_lines(t, &records, 5);
+        assert_eq!(lines[0], ("1. Player 2".to_string(), "1200 pts · 5 of 5 worlds".to_string()));
+        assert_eq!(lines[1], ("2. Lucía".to_string(), "700 pts · 2 of 5 worlds".to_string()));
     }
 }

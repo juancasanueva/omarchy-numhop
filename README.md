@@ -71,7 +71,8 @@ numhop remembers each player's best score and how many worlds they have cleared,
 name typed in the menu, ignoring case; a player without a name keeps the record of
 their seat. Each player picks a **start world** in the menu among the worlds they
 have reached, so nobody has to replay world 1 every time. Progress is saved after
-every cleared world, and the results mark any **New best!** score.
+every cleared world, and the results mark any **New best!** score. **High scores** in
+the main menu lists the top players by best score, with the worlds each has cleared.
 
 ## Language
 

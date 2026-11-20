@@ -92,6 +92,7 @@ catalog! {
     loading, load_failed,
     tagline, players, player_n, player_level, player_hero, player_start, start, settings, menu_hint,
     language, sound, on, off, back, settings_hint, name_placeholder, name_hint,
+    high_scores, scores_empty, score_value,
     about, about_hint, about_version, about_source, about_license, about_fonts, about_inspired,
     age_six, age_eight, age_ten, age_twelve,
     topic_addition, topic_subtraction, topic_subtraction_borrow, topic_times_tables,

@@ -38,6 +38,25 @@ pub fn is_new_best(score: u32, best_before: Option<u32>) -> bool {
     best_before.is_some_and(|best| score > best)
 }
 
+/// A record key as a name to show: each word capitalised again ("ana maría" becomes
+/// "Ana María"). A seat key (`#1`) has no name; it gives the seat index instead.
+pub fn display_name(key: &str) -> Result<String, usize> {
+    if let Some(seat) = key.strip_prefix('#').and_then(|n| n.parse::<usize>().ok()) {
+        return Err(seat.saturating_sub(1));
+    }
+    let mut out = String::with_capacity(key.len());
+    let mut word_start = true;
+    for c in key.chars() {
+        if word_start {
+            out.extend(c.to_uppercase());
+        } else {
+            out.push(c);
+        }
+        word_start = matches!(c, ' ' | '-');
+    }
+    Ok(out)
+}
+
 /// The record key for the name typed into seat `seat` (0 or 1).
 pub fn record_key(name: &str, seat: usize) -> String {
     let name = clean_name(name).to_lowercase();
@@ -69,6 +88,20 @@ impl Records {
             mine.best_score = mine.best_score.max(theirs.best_score);
             mine.worlds_cleared = mine.worlds_cleared.max(theirs.worlds_cleared);
         }
+    }
+
+    /// Players with any progress, best score first, then most worlds cleared.
+    pub fn ranked(&self) -> Vec<(&str, Record)> {
+        let mut list: Vec<(&str, Record)> = self
+            .0
+            .iter()
+            .filter(|(_, r)| r.best_score > 0 || r.worlds_cleared > 0)
+            .map(|(k, r)| (k.as_str(), *r))
+            .collect();
+        list.sort_by(|(ka, a), (kb, b)| {
+            b.best_score.cmp(&a.best_score).then(b.worlds_cleared.cmp(&a.worlds_cleared)).then(ka.cmp(kb))
+        });
+        list
     }
 
     /// How many worlds this player may start from: the first, plus one for each world
@@ -192,6 +225,26 @@ mod tests {
         assert_eq!(mine.get("lucía"), Record { best_score: 900, worlds_cleared: 3 });
         assert_eq!(mine.get("mateo"), Record { best_score: 120, worlds_cleared: 2 });
         assert_eq!(mine.get("ana"), Record { best_score: 50, worlds_cleared: 0 });
+    }
+
+    #[test]
+    fn ranking_puts_the_best_score_first_and_skips_empty_records() {
+        let mut records = Records::default();
+        records.merge("ana", 500, 1);
+        records.merge("bo", 900, 0);
+        records.merge("cy", 500, 3);
+        records.merge("#2", 0, 0);
+        let order: Vec<&str> = records.ranked().iter().map(|(k, _)| *k).collect();
+        assert_eq!(order, ["bo", "cy", "ana"], "ties on score go to more worlds cleared");
+    }
+
+    #[test]
+    fn keys_show_as_capitalised_names_or_seats() {
+        assert_eq!(display_name("lucía"), Ok("Lucía".to_string()));
+        assert_eq!(display_name("ana maría"), Ok("Ana María".to_string()));
+        assert_eq!(display_name("jean-luc"), Ok("Jean-Luc".to_string()));
+        assert_eq!(display_name("#1"), Err(0));
+        assert_eq!(display_name("#2"), Err(1));
     }
 
     #[test]
