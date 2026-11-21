@@ -22,16 +22,18 @@ pub enum Character {
     Pip,
     Bolt,
     Fern,
+    Pebble,
 }
 
 impl Character {
-    pub const ALL: [Character; 3] = [Character::Pip, Character::Bolt, Character::Fern];
+    pub const ALL: [Character; 4] = [Character::Pip, Character::Bolt, Character::Fern, Character::Pebble];
 
     pub fn name(self) -> &'static str {
         match self {
             Character::Pip => "Pip",
             Character::Bolt => "Bolt",
             Character::Fern => "Fern",
+            Character::Pebble => "Pebble",
         }
     }
 
@@ -39,15 +41,17 @@ impl Character {
         match self {
             Character::Pip => Character::Bolt,
             Character::Bolt => Character::Fern,
-            Character::Fern => Character::Pip,
+            Character::Fern => Character::Pebble,
+            Character::Pebble => Character::Pip,
         }
     }
 
     pub fn previous(self) -> Self {
         match self {
-            Character::Pip => Character::Fern,
+            Character::Pip => Character::Pebble,
             Character::Bolt => Character::Pip,
             Character::Fern => Character::Bolt,
+            Character::Pebble => Character::Fern,
         }
     }
 }
@@ -287,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn heroes_cycle_through_all_three_both_ways() {
+    fn heroes_cycle_through_all_four_both_ways() {
         for c in Character::ALL {
             assert_eq!(c.next().previous(), c);
             assert_eq!(c.previous().next(), c);
@@ -297,7 +301,7 @@ mod tests {
             seen.push(seen.last().unwrap().next());
         }
         assert_eq!(seen, Character::ALL, "next visits every hero once");
-        assert_eq!(Character::Fern.next(), Character::Pip, "and wraps around");
+        assert_eq!(Character::Pebble.next(), Character::Pip, "and wraps around");
     }
 
     #[test]

@@ -822,14 +822,14 @@ mod tests {
     }
 
     #[test]
-    fn the_hero_row_steps_through_the_three_heroes_both_ways() {
+    fn the_hero_row_steps_through_the_four_heroes_both_ways() {
         let mut choices = MenuChoices::default();
         choices.open(Page::Main, Row::Hero(0));
         let mut app = menu_app(choices);
         let hero = |app: &App| app.world().resource::<MenuChoices>().configs[0].character;
         assert_eq!(hero(&app), Character::Pip);
         tap(&mut app, KeyCode::ArrowLeft);
-        assert_eq!(hero(&app), Character::Fern, "Left from the first hero wraps to the last");
+        assert_eq!(hero(&app), Character::Pebble, "Left from the first hero wraps to the last");
         tap(&mut app, KeyCode::ArrowRight);
         tap(&mut app, KeyCode::ArrowRight);
         assert_eq!(hero(&app), Character::Bolt, "Right steps forward");

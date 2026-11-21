@@ -166,6 +166,7 @@ pub fn hero_model(assets: &GameAssets, character: Character) -> Handle<WorldAsse
         Character::Pip => assets.hero_pip.clone(),
         Character::Bolt => assets.hero_bolt.clone(),
         Character::Fern => assets.hero_fern.clone(),
+        Character::Pebble => assets.hero_pebble.clone(),
     }
 }
 

@@ -371,6 +371,41 @@ def build_fern():
     return finish(m)
 
 
+def build_pebble():
+    m = new_model("hero_pebble")
+    navy = mat("pebble_navy", "#26334F", 0.5)
+    white = mat("pebble_white", "#F6F7FB", 0.55)
+    orange = mat("pebble_orange", "#FFA62B", 0.5)
+    scarf = mat("pebble_scarf", "#E2433F", 0.65)
+    pink = mat("pebble_pink", "#F29BA6", 0.6)
+    black = mat("eye_black", "#141016", 0.25)
+    shine = mat("eye_shine", "#FFFFFF", 0.2)
+
+    # Egg-shaped body with a white front and a little tail.
+    add(m, sphere(18, 12), navy, trs((0, 0, 0.28), scale=(0.21, 0.2, 0.26)), True, "body")
+    add(m, sphere(16, 10), white, trs((0.08, 0, 0.27), scale=(0.15, 0.16, 0.21)), True, "body")
+    add(m, sphere(10, 6), navy, trs((-0.19, 0, 0.1), rot=(0, -0.4, 0), scale=(0.06, 0.08, 0.03)), True, "body")
+    # Head with a white face, eyes, cheeks and a beak pointing forward.
+    add(m, sphere(18, 12), navy, trs((0.02, 0, 0.6), scale=(0.17, 0.17, 0.15)), True, "head")
+    add(m, sphere(14, 10), white, trs((0.08, 0, 0.59), scale=(0.11, 0.13, 0.1)), True, "head")
+    for s in (-1, 1):
+        add(m, sphere(12, 8), black, trs((0.175, s * 0.055, 0.62), scale=(0.025, 0.03, 0.04)), True, "head")
+        add(m, sphere(8, 6), shine, trs((0.196, s * 0.048, 0.638), scale=(0.01, 0.01, 0.012)), True, "head")
+        add(m, sphere(10, 6), pink, trs((0.15, s * 0.1, 0.565), scale=(0.03, 0.025, 0.02)), True, "head")
+    add(m, cyl(8, 0.04, 0.0, 0.09), orange, trs((0.21, 0, 0.57), rot=(0, PI / 2, 0), scale=(1, 1.1, 0.8)), True, "head")
+    # A red scarf round the neck, its end hanging down the back.
+    add(m, torus(0.135, 0.035, 20, 8), scarf, trs((0.01, 0, 0.48)), True, "body")
+    add(m, sphere(10, 6), scarf, trs((-0.12, 0.06, 0.4), rot=(0.2, 0.3, 0), scale=(0.03, 0.045, 0.09)), True, "body")
+    # Flippers.
+    for s in (-1, 1):
+        add(m, sphere(12, 8), navy, trs((0.0, s * 0.2, 0.33), rot=(s * 0.25, 0, 0), scale=(0.06, 0.025, 0.15)),
+            True, side("arm", s))
+    # Flat orange feet.
+    for s in (-1, 1):
+        add(m, sphere(12, 8), orange, trs((0.07, s * 0.08, 0.025), scale=(0.09, 0.06, 0.025)), True, side("leg", s))
+    return finish(m)
+
+
 def build_grumble():
     m = new_model("enemy_grumble")
     purple = mat("grumble_purple", "#8E44C9", 0.55)
@@ -630,6 +665,16 @@ RIG_FERN = [
     ("leg.R", (0, -0.13, 0.18), (0.06, -0.12, 0.02), "root"),
 ]
 
+RIG_PEBBLE = [
+    ("root", (0, 0, 0), (0, 0, 0.1), None),
+    ("body", (0, 0, 0.1), (0, 0, 0.45), "root"),
+    ("head", (0.02, 0, 0.45), (0.02, 0, 0.78), "body"),
+    ("arm.L", (0.0, 0.19, 0.44), (0.0, 0.22, 0.2), "body"),
+    ("arm.R", (0.0, -0.19, 0.44), (0.0, -0.22, 0.2), "body"),
+    ("leg.L", (0.03, 0.08, 0.12), (0.07, 0.08, 0.0), "root"),
+    ("leg.R", (0.03, -0.08, 0.12), (0.07, -0.08, 0.0), "root"),
+]
+
 RIG_GRUMBLE = [
     ("root", (0, 0, 0), (0, 0, 0.1), None),
     ("body", (0, 0, 0.02), (0, 0, 0.62), "root"),
@@ -707,10 +752,11 @@ def stash_clip(arm, action, name):
     track.strips.new(name, start, action)
 
 
-def biped_clips(arm, legs, arms, bob, lean, tail, back):
-    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt and Fern.
-    `back` is how far the body reaches behind the feet, so the hero lies on the
-    ground instead of sinking into it at the end of the death clip."""
+def biped_clips(arm, legs, arms, bob, lean, tail, back, roll=0.04):
+    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt,
+    Fern and Pebble. `back` is how far the body reaches behind the feet, so the hero
+    lies on the ground instead of sinking into it at the end of the death clip.
+    `roll` is how far the body rocks side to side per step; Pebble waddles."""
     # Walk: legs and arms swing in opposition, the body dips twice per stride.
     action = new_clip(arm, "walk")
     for f in range(0, FPS + 1, 2):
@@ -721,7 +767,7 @@ def biped_clips(arm, legs, arms, bob, lean, tail, back):
             "leg.R": {"rot": [("y", legs * sw)]},
             "arm.L": {"rot": [("y", arms * sw)]},
             "arm.R": {"rot": [("y", -arms * sw)]},
-            "body": {"rot": [("y", lean), ("x", 0.04 * sw)], "loc": (0, 0, bob * abs(math.sin(ph)))},
+            "body": {"rot": [("y", lean), ("x", roll * sw)], "loc": (0, 0, bob * abs(math.sin(ph)))},
             "head": {"rot": [("y", -0.06 * math.sin(2 * ph))]},
         }
         if tail:
@@ -861,6 +907,10 @@ def rig_character(obj):
         # A springier stride: the biggest bounce of the heroes, with a narrower arm
         # swing than Bolt's and a slightly wider leg swing.
         biped_clips(arm, legs=0.5, arms=0.5, bob=0.045, lean=0.06, tail=False, back=0.21)
+    elif obj.name == "hero_pebble":
+        arm = make_armature(obj, RIG_PEBBLE)
+        # Short legs and a big side-to-side rock: a waddle.
+        biped_clips(arm, legs=0.4, arms=0.35, bob=0.02, lean=0.03, tail=False, back=0.245, roll=0.14)
     else:
         arm = make_armature(obj, RIG_GRUMBLE)
         grumble_clips(arm)
@@ -872,7 +922,7 @@ def rig_character(obj):
     return arm
 
 
-RIGGED = {"hero_pip", "hero_bolt", "hero_fern", "enemy_grumble"}
+RIGGED = {"hero_pip", "hero_bolt", "hero_fern", "hero_pebble", "enemy_grumble"}
 
 
 def export_rigged(arm, mesh_obj, path):
@@ -904,7 +954,7 @@ def export_rigged(arm, mesh_obj, path):
 
 
 BUILDERS = [
-    build_pip, build_bolt, build_fern, build_grumble, build_block_crystal, build_block_used,
+    build_pip, build_bolt, build_fern, build_pebble, build_grumble, build_block_crystal, build_block_used,
     build_block_brick, build_ground_tile, build_gem, build_key, build_gate,
     build_flag, build_tree, build_bush, build_cloud,
 ]

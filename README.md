@@ -10,12 +10,12 @@ costs a life and passes the turn.
 The game design (turn-based sibling play, age-tiered topics, a 30-second clock)
 is inspired by [pgarevalo/mariomath](https://github.com/pgarevalo/mariomath).
 Everything here is original: the code, the characters (Pip the fox, Bolt the
-robot, Fern the frog, and the Grumbles), and the 3D models, which are built procedurally in
-Blender from `assets-src/build_models.py`. The same script rigs the characters
-with a small skeleton and keys their `walk`, `idle`, and `jump` clips; the game
-blends between them as they move, and speeds the walk up as they run. Heroes also
-have a `death` clip: when a Grumble catches one, play stops while they tumble over,
-then the turn moves on.
+robot, Fern the frog, Pebble the penguin, and the Grumbles), and the 3D models,
+which are built procedurally in Blender from `assets-src/build_models.py`. The
+same script rigs the characters with a small skeleton and keys their `walk`,
+`idle`, and `jump` clips; the game blends between them as they move, and speeds
+the walk up as they run. Heroes also have a `death` clip: when a Grumble catches
+one, play stops while they tumble over, then the turn moves on.
 
 The sound effects are original too: there are no audio files. Each one is a few
 square and triangle tones, mixed when the game starts (`src/domain/sound.rs`).
