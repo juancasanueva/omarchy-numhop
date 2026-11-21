@@ -380,12 +380,31 @@ mod tests {
     }
 
     #[test]
-    fn each_world_is_harder_than_the_one_before() {
+    fn each_world_has_more_grumbles_and_no_fewer_crystals() {
         let worlds = worlds();
         for pair in worlds.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             assert!(b.enemies.len() > a.enemies.len(), "{} has no more Grumbles than {}", b.name, a.name);
             assert!(b.crystals().len() >= a.crystals().len(), "{} has fewer crystals than {}", b.name, a.name);
+        }
+    }
+
+    #[test]
+    fn grumbles_are_spaced_out_and_clear_of_gap_edges() {
+        // A Grumble needs room to patrol, and one right at a gap would leave no safe
+        // landing. assets-src/gen_worlds.py follows the same rules.
+        for w in worlds() {
+            let mut cols: Vec<i32> = w.enemies.iter().map(|e| e.col).collect();
+            cols.sort_unstable();
+            for pair in cols.windows(2) {
+                assert!(pair[1] - pair[0] >= 3, "{}: Grumbles at {} and {} are too close", w.name, pair[0], pair[1]);
+            }
+            for e in &w.enemies {
+                for col in e.col - 2..=e.col + 2 {
+                    let ground = Cell { col, row: e.row - 1 };
+                    assert!(w.solid_at(ground).is_some(), "{}: the Grumble at {} is next to a gap", w.name, e.col);
+                }
+            }
         }
     }
 

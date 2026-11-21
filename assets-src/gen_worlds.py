@@ -26,23 +26,16 @@ def chunk(w, ground=True, items=()):
     return {"w": w, "ground": ground, "rows": rows}
 
 
-def run(rng, w, enemies, decor=True):
+def run(rng, w, decor=True):
+    """A stretch of plain ground, sometimes with a tree or a bush. Grumbles are
+    placed later, over the whole map, by `place_grumbles`."""
+    # This draw no longer decides anything; it stays so the seeded maps match the
+    # ones committed in levels.rs.
+    rng.shuffle(list(range(2, w - 2)))
     items = []
-    slots = list(range(2, w - 2))
-    rng.shuffle(slots)
-    used = set()
-    for c in slots:
-        if enemies == 0:
-            break
-        if any(abs(c - u) < 2 for u in used):
-            continue
-        items.append((c, 2, "e"))
-        used.add(c)
-        enemies -= 1
-    if decor and rng.random() < 0.5:
-        free = [c for c in range(1, w - 1) if all(abs(c - u) > 0 for u in used)]
-        if free:
-            items.append((rng.choice(free), 2, rng.choice("tb")))
+    inner = range(1, w - 1)
+    if decor and rng.random() < 0.5 and inner:
+        items.append((rng.choice(inner), 2, rng.choice("tb")))
     return chunk(w, items=items)
 
 
@@ -97,9 +90,9 @@ def start():
     return chunk(6, items=[(2, 2, "P"), (4, 2, "t")])
 
 
-def night_end():
-    """The final staircase, key and gate, cut verbatim from Starry Night."""
-    src = open(sys.argv[1]).read()
+def night_end(src):
+    """The final staircase, key and gate, cut verbatim from Starry Night in `src`,
+    the text of src/domain/levels.rs."""
     body = re.search(r"const NIGHT: &\[&str\] = &\[(.*?)\];", src, re.S).group(1)
     lines = re.findall(r'"(.*?)"', body)
     assert len(lines) == HEIGHT
@@ -144,7 +137,6 @@ def place_grumbles(rng, lines, count):
 
 
 def assemble(chunks):
-    w = sum(c["w"] for c in chunks)
     rows = {r: [] for r in range(HEIGHT)}
     for c in chunks:
         for r in range(2, HEIGHT):
@@ -156,25 +148,27 @@ def assemble(chunks):
     return lines
 
 
-def plan(rng, features, grumbles, run_w, gaps):
-    """Interleave features with runs; drop a checkpoint every third of the way."""
-    chunks = [start(), run(rng, run_w[1], 0)]
+def plan(rng, end, features, grumbles, run_w, gaps):
+    """Interleave features with runs; drop a checkpoint every third of the way;
+    finish with the `end` staircase."""
+    chunks = [start(), run(rng, run_w[1])]
     n = len(features)
     marks = {n // 3, (2 * n) // 3} if n >= 9 else {n // 2}
     gap_left = list(gaps)
     for i, f in enumerate(features):
         if i in marks:
-            chunks += [checkpoint(rng), run(rng, rng.randint(*run_w), 0)]
+            chunks += [checkpoint(rng), run(rng, rng.randint(*run_w))]
         chunks.append(f(rng))
-        chunks.append(run(rng, rng.randint(*run_w), 0))
+        chunks.append(run(rng, rng.randint(*run_w)))
         if gap_left and i % 2 == 1:
             # A gap, then a short landing strip with no Grumble on it.
             chunks.append(gap(rng, gap_left.pop(0)))
-            chunks.append(run(rng, rng.randint(2, 3), 0, decor=False))
-    chunks.append(night_end())
+            chunks.append(run(rng, rng.randint(2, 3), decor=False))
+    chunks.append(end)
     lines = assemble(chunks)
     # The staircase stretch keeps the Grumbles it came with from Starry Night.
-    return place_grumbles(rng, lines, grumbles - sum(c["rows"][2].count("e") for c in chunks[-1:]))
+    end_grumbles = end["rows"][2].count("e")
+    return place_grumbles(rng, lines, grumbles - end_grumbles)
 
 
 def check(name, lines):
@@ -222,9 +216,13 @@ WORLDS = [
      28, (2, 4), [3, 3, 3, 3, 3, 3, 3]),
 ]
 
+if len(sys.argv) != 2:
+    sys.exit("usage: python3 assets-src/gen_worlds.py src/domain/levels.rs")
+END = night_end(open(sys.argv[1]).read())
+
 for name, const, seed, features, grumbles, run_w, gaps in WORLDS:
     rng = random.Random(seed)
-    lines = plan(rng, features, grumbles, run_w, gaps)
+    lines = plan(rng, END, features, grumbles, run_w, gaps)
     counts, width = check(name, lines)
     print(f"// {name}: width {width}, crystals {counts['C']}, grumbles {counts['e']}, checkpoints {counts['F']}",
           file=sys.stderr)

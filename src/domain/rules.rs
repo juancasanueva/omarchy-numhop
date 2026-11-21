@@ -354,6 +354,18 @@ mod tests {
     }
 
     #[test]
+    fn with_ten_worlds_the_stars_climb_across_all_of_them() {
+        let starting = |world| {
+            let mut c = cfg("P1", AgeLevel::Six);
+            c.start_world = world;
+            Match::new(vec![c], 10)
+        };
+        let tiers: Vec<u8> = (0..10).map(|w| starting(w).tier(0.0)).collect();
+        assert_eq!(tiers, [1, 1, 1, 2, 2, 3, 3, 3, 4, 4]);
+        assert_eq!(starting(9).tier(1.0), 4, "the end of the last world is the hardest");
+    }
+
+    #[test]
     fn tier_grows_with_progress() {
         let mut m = duo();
         assert_eq!(m.tier(0.0), 1);
