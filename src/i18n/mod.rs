@@ -77,7 +77,7 @@ macro_rules! catalog {
             /// Places in the results: first, second, third.
             pub ordinals: [&'static str; 3],
             /// World names, in world order.
-            pub worlds: [&'static str; 5],
+            pub worlds: [&'static str; 10],
         }
 
         impl Strings {

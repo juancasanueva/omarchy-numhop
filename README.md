@@ -32,7 +32,7 @@ worlds and the menu all have their own. Turn them off with **Sound** under
 | ![A crystal question: 2 × 5 with four answers and a 30-second clock](docs/screenshots/question.jpg) | ![A right answer, with the times table worked out underneath](docs/screenshots/feedback.jpg) |
 | Bump a crystal to get a question at your level | Every answer comes with the working |
 | ![Mateo plays Starry Night, the fifth world](docs/screenshots/starry-night.jpg) | ![The results: Mateo wins, and Lucía's score is marked New best](docs/screenshots/results.jpg) |
-| Five worlds, from Sunny Meadow to Starry Night | Results, with any new best score marked |
+| Ten worlds, from Sunny Meadow to Rainbow Heights | Results, with any new best score marked |
 | ![The same question screen in Spanish: a subtraction with borrowing in school notation](docs/screenshots/question-es.jpg) | |
 | En español, con la notación del cole | |
 

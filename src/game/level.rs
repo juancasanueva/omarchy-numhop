@@ -411,7 +411,8 @@ fn spawn_backdrop(
     materials: &mut Assets<StandardMaterial>,
 ) {
     let mut rng = Rng::new(1000 + world as u64);
-    let floor_color = if world == 0 { Color::srgb(0.38, 0.62, 0.30) } else { Color::srgb(0.42, 0.34, 0.42) };
+    let [r, g, b] = level.palette.floor;
+    let floor_color = Color::srgb(r, g, b);
     let width = level.width as f32 + 60.0;
     commands.spawn((
         LevelEntity,
