@@ -290,6 +290,7 @@ mod tests {
     fn heroes_cycle_through_all_three_both_ways() {
         for c in Character::ALL {
             assert_eq!(c.next().previous(), c);
+            assert_eq!(c.previous().next(), c);
         }
         let mut seen = vec![Character::Pip];
         while seen.len() < Character::ALL.len() {

@@ -858,7 +858,8 @@ def rig_character(obj):
         biped_clips(arm, legs=0.45, arms=0.6, bob=0.02, lean=0.05, tail=False, back=0.22)
     elif obj.name == "hero_fern":
         arm = make_armature(obj, RIG_FERN)
-        # A springier stride than the others: shorter swing, bigger bounce.
+        # A springier stride: the biggest bounce of the heroes, with a narrower arm
+        # swing than Bolt's and a slightly wider leg swing.
         biped_clips(arm, legs=0.5, arms=0.5, bob=0.045, lean=0.06, tail=False, back=0.21)
     else:
         arm = make_armature(obj, RIG_GRUMBLE)
