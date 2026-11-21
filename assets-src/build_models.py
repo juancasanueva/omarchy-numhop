@@ -753,8 +753,9 @@ def stash_clip(arm, action, name):
 
 
 def biped_clips(arm, legs, arms, bob, lean, tail, back, roll=0.04):
-    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt,
-    Fern and Pebble. `back` is how far the body reaches behind the feet, so the hero
+    """Walk, idle, jump and death for a two-legged hero. `tail` says whether the rig
+    has a `tail` bone to animate; only Pip's does (Pebble's little tail rides on
+    its body bone). `back` is how far the mesh reaches behind the feet, so the hero
     lies on the ground instead of sinking into it at the end of the death clip.
     `roll` is how far the body rocks side to side per step; Pebble waddles."""
     # Walk: legs and arms swing in opposition, the body dips twice per stride.
@@ -909,7 +910,8 @@ def rig_character(obj):
         biped_clips(arm, legs=0.5, arms=0.5, bob=0.045, lean=0.06, tail=False, back=0.21)
     elif obj.name == "hero_pebble":
         arm = make_armature(obj, RIG_PEBBLE)
-        # Short legs and a big side-to-side rock: a waddle.
+        # Short legs and a big side-to-side rock: a waddle. `back` covers the tail,
+        # whose tip reaches x = -0.243; move the tail and this must follow.
         biped_clips(arm, legs=0.4, arms=0.35, bob=0.02, lean=0.03, tail=False, back=0.245, roll=0.14)
     else:
         arm = make_armature(obj, RIG_GRUMBLE)
