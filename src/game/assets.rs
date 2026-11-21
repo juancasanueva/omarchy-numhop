@@ -16,6 +16,7 @@ pub struct GameAssets {
     pub symbols: Handle<Font>,
     pub hero_pip: Handle<WorldAsset>,
     pub hero_bolt: Handle<WorldAsset>,
+    pub hero_fern: Handle<WorldAsset>,
     pub enemy: Handle<WorldAsset>,
     pub crystal: Handle<WorldAsset>,
     pub used: Handle<WorldAsset>,
@@ -31,14 +32,16 @@ pub struct GameAssets {
     /// The animated characters' whole files, for their named clips.
     pub gltf_pip: Handle<Gltf>,
     pub gltf_bolt: Handle<Gltf>,
+    pub gltf_fern: Handle<Gltf>,
     pub gltf_grumble: Handle<Gltf>,
 }
 
 impl GameAssets {
-    fn all_models(&self) -> [(&'static str, &Handle<WorldAsset>); 14] {
+    fn all_models(&self) -> [(&'static str, &Handle<WorldAsset>); 15] {
         [
             ("hero_pip", &self.hero_pip),
             ("hero_bolt", &self.hero_bolt),
+            ("hero_fern", &self.hero_fern),
             ("enemy_grumble", &self.enemy),
             ("block_crystal", &self.crystal),
             ("block_used", &self.used),
@@ -73,6 +76,7 @@ fn load(mut commands: Commands, server: Res<AssetServer>, language: Res<Language
         symbols: server.load("fonts/NotoSansSymbols2-Regular.ttf"),
         hero_pip: model(&server, "hero_pip"),
         hero_bolt: model(&server, "hero_bolt"),
+        hero_fern: model(&server, "hero_fern"),
         enemy: model(&server, "enemy_grumble"),
         crystal: model(&server, "block_crystal"),
         used: model(&server, "block_used"),
@@ -87,6 +91,7 @@ fn load(mut commands: Commands, server: Res<AssetServer>, language: Res<Language
         cloud: model(&server, "cloud"),
         gltf_pip: server.load("models/hero_pip.glb"),
         gltf_bolt: server.load("models/hero_bolt.glb"),
+        gltf_fern: server.load("models/hero_fern.glb"),
         gltf_grumble: server.load("models/enemy_grumble.glb"),
     };
     commands.insert_resource(assets);

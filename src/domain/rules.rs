@@ -21,22 +21,33 @@ pub const GEMS_PER_CRYSTAL: u32 = 3;
 pub enum Character {
     Pip,
     Bolt,
+    Fern,
 }
 
 impl Character {
-    pub const ALL: [Character; 2] = [Character::Pip, Character::Bolt];
+    pub const ALL: [Character; 3] = [Character::Pip, Character::Bolt, Character::Fern];
 
     pub fn name(self) -> &'static str {
         match self {
             Character::Pip => "Pip",
             Character::Bolt => "Bolt",
+            Character::Fern => "Fern",
         }
     }
 
     pub fn next(self) -> Self {
         match self {
             Character::Pip => Character::Bolt,
+            Character::Bolt => Character::Fern,
+            Character::Fern => Character::Pip,
+        }
+    }
+
+    pub fn previous(self) -> Self {
+        match self {
+            Character::Pip => Character::Fern,
             Character::Bolt => Character::Pip,
+            Character::Fern => Character::Bolt,
         }
     }
 }
@@ -273,6 +284,19 @@ mod tests {
             character: Character::Pip,
             start_world: 0,
         }
+    }
+
+    #[test]
+    fn heroes_cycle_through_all_three_both_ways() {
+        for c in Character::ALL {
+            assert_eq!(c.next().previous(), c);
+        }
+        let mut seen = vec![Character::Pip];
+        while seen.len() < Character::ALL.len() {
+            seen.push(seen.last().unwrap().next());
+        }
+        assert_eq!(seen, Character::ALL, "next visits every hero once");
+        assert_eq!(Character::Fern.next(), Character::Pip, "and wraps around");
     }
 
     #[test]

@@ -328,6 +328,49 @@ def build_bolt():
     return finish(m)
 
 
+def build_fern():
+    m = new_model("hero_fern")
+    green = mat("fern_green", "#5DBB46", 0.5)
+    belly = mat("fern_belly", "#E9F2B4", 0.6)
+    foot = mat("fern_foot", "#9ED65A", 0.55)
+    leaf = mat("fern_leaf", "#2E8B3E", 0.5)
+    mouth = mat("fern_mouth", "#2B3A1E", 0.5)
+    pink = mat("fern_pink", "#F29BA6", 0.6)
+    white = mat("fern_white", "#FFFFFF", 0.35)
+    black = mat("eye_black", "#141016", 0.25)
+    shine = mat("eye_shine", "#FFFFFF", 0.2)
+
+    # Round body with a pale belly.
+    add(m, sphere(18, 10), green, trs((0, 0, 0.25), scale=(0.2, 0.2, 0.2)), True, "body")
+    add(m, sphere(14, 8), belly, trs((0.09, 0, 0.23), scale=(0.13, 0.15, 0.15)), True, "body")
+    # Wide head with a smile: a thin dark disc tucked inside shows only its curved rim.
+    add(m, sphere(20, 12), green, trs((0.03, 0, 0.5), scale=(0.24, 0.27, 0.18)), True, "head")
+    add(m, sphere(20, 6), mouth, trs((0.15, 0, 0.465), scale=(0.125, 0.17, 0.016)), True, "head")
+    for s in (-1, 1):
+        add(m, sphere(10, 6), pink, trs((0.2, s * 0.17, 0.45), scale=(0.04, 0.03, 0.025)), True, "head")
+    # Bulging eyes on top of the head, with pupils and highlights.
+    for s in (-1, 1):
+        add(m, sphere(14, 10), white, trs((0.1, s * 0.12, 0.65), scale=(0.085, 0.085, 0.085)), True, "head")
+        add(m, sphere(12, 8), black, trs((0.17, s * 0.125, 0.66), scale=(0.03, 0.04, 0.05)), True, "head")
+        add(m, sphere(8, 6), shine, trs((0.193, s * 0.115, 0.685), scale=(0.012, 0.012, 0.014)), True, "head")
+    # A sprout with two leaves between the eyes.
+    add(m, cyl(6, 0.012, 0.012, 0.08), leaf, trs((-0.03, 0, 0.69)), bone="head")
+    for s in (-1, 1):
+        add(m, sphere(10, 6), leaf, trs((-0.03, s * 0.05, 0.75), rot=(s * -0.5, 0, 0), scale=(0.03, 0.06, 0.012)),
+            True, "head")
+    # Arms.
+    for s in (-1, 1):
+        add(m, sphere(10, 6), green, trs((0.1, s * 0.18, 0.28), scale=(0.05, 0.045, 0.07)), True, side("arm", s))
+    # Thighs and big webbed feet with three toes each.
+    for s in (-1, 1):
+        add(m, sphere(12, 8), green, trs((-0.02, s * 0.14, 0.13), scale=(0.08, 0.06, 0.08)), True, side("leg", s))
+        add(m, sphere(12, 8), foot, trs((0.07, s * 0.12, 0.035), scale=(0.11, 0.07, 0.035)), True, side("leg", s))
+        for t in (-1, 0, 1):
+            add(m, sphere(8, 6), foot, trs((0.17, s * 0.12 + t * 0.045, 0.03), scale=(0.025, 0.025, 0.022)),
+                True, side("leg", s))
+    return finish(m)
+
+
 def build_grumble():
     m = new_model("enemy_grumble")
     purple = mat("grumble_purple", "#8E44C9", 0.55)
@@ -577,6 +620,16 @@ RIG_BOLT = [
     ("leg.R", (0, -0.11, 0.2), (0.03, -0.11, 0.0), "root"),
 ]
 
+RIG_FERN = [
+    ("root", (0, 0, 0), (0, 0, 0.1), None),
+    ("body", (0, 0, 0.1), (0, 0, 0.38), "root"),
+    ("head", (0.03, 0, 0.38), (0.03, 0, 0.72), "body"),
+    ("arm.L", (0.09, 0.16, 0.33), (0.11, 0.19, 0.22), "body"),
+    ("arm.R", (0.09, -0.16, 0.33), (0.11, -0.19, 0.22), "body"),
+    ("leg.L", (0, 0.13, 0.18), (0.06, 0.12, 0.02), "root"),
+    ("leg.R", (0, -0.13, 0.18), (0.06, -0.12, 0.02), "root"),
+]
+
 RIG_GRUMBLE = [
     ("root", (0, 0, 0), (0, 0, 0.1), None),
     ("body", (0, 0, 0.02), (0, 0, 0.62), "root"),
@@ -655,7 +708,7 @@ def stash_clip(arm, action, name):
 
 
 def biped_clips(arm, legs, arms, bob, lean, tail, back):
-    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt.
+    """Walk, idle, jump and death for a two-legged hero. `tail` is False for Bolt and Fern.
     `back` is how far the body reaches behind the feet, so the hero lies on the
     ground instead of sinking into it at the end of the death clip."""
     # Walk: legs and arms swing in opposition, the body dips twice per stride.
@@ -803,6 +856,10 @@ def rig_character(obj):
     elif obj.name == "hero_bolt":
         arm = make_armature(obj, RIG_BOLT)
         biped_clips(arm, legs=0.45, arms=0.6, bob=0.02, lean=0.05, tail=False, back=0.22)
+    elif obj.name == "hero_fern":
+        arm = make_armature(obj, RIG_FERN)
+        # A springier stride than the others: shorter swing, bigger bounce.
+        biped_clips(arm, legs=0.5, arms=0.5, bob=0.045, lean=0.06, tail=False, back=0.21)
     else:
         arm = make_armature(obj, RIG_GRUMBLE)
         grumble_clips(arm)
@@ -814,7 +871,7 @@ def rig_character(obj):
     return arm
 
 
-RIGGED = {"hero_pip", "hero_bolt", "enemy_grumble"}
+RIGGED = {"hero_pip", "hero_bolt", "hero_fern", "enemy_grumble"}
 
 
 def export_rigged(arm, mesh_obj, path):
@@ -846,7 +903,7 @@ def export_rigged(arm, mesh_obj, path):
 
 
 BUILDERS = [
-    build_pip, build_bolt, build_grumble, build_block_crystal, build_block_used,
+    build_pip, build_bolt, build_fern, build_grumble, build_block_crystal, build_block_used,
     build_block_brick, build_ground_tile, build_gem, build_key, build_gate,
     build_flag, build_tree, build_bush, build_cloud,
 ]

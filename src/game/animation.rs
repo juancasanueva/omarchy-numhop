@@ -18,6 +18,7 @@ use super::assets::GameAssets;
 pub enum Rig {
     Pip,
     Bolt,
+    Fern,
     Grumble,
 }
 
@@ -26,6 +27,7 @@ impl Rig {
         match character {
             Character::Pip => Rig::Pip,
             Character::Bolt => Rig::Bolt,
+            Character::Fern => Rig::Fern,
         }
     }
 }
@@ -89,6 +91,7 @@ impl Clips {
 pub struct CharacterClips {
     pip: Clips,
     bolt: Clips,
+    fern: Clips,
     grumble: Clips,
 }
 
@@ -97,6 +100,7 @@ impl CharacterClips {
         match rig {
             Rig::Pip => &self.pip,
             Rig::Bolt => &self.bolt,
+            Rig::Fern => &self.fern,
             Rig::Grumble => &self.grumble,
         }
     }
@@ -163,15 +167,16 @@ fn prepare_clips(
     if missing.is_some() {
         return;
     }
-    let handles = [&assets.gltf_pip, &assets.gltf_bolt, &assets.gltf_grumble];
+    let handles = [&assets.gltf_pip, &assets.gltf_bolt, &assets.gltf_fern, &assets.gltf_grumble];
     if !handles.iter().all(|h| server.is_loaded_with_dependencies(*h)) {
         return;
     }
     let pip = clips_for(gltfs.get(&assets.gltf_pip), &mut graphs, "hero_pip.glb", true);
     let bolt = clips_for(gltfs.get(&assets.gltf_bolt), &mut graphs, "hero_bolt.glb", true);
+    let fern = clips_for(gltfs.get(&assets.gltf_fern), &mut graphs, "hero_fern.glb", true);
     let grumble = clips_for(gltfs.get(&assets.gltf_grumble), &mut graphs, "enemy_grumble.glb", false);
-    match (pip, bolt, grumble) {
-        (Some(pip), Some(bolt), Some(grumble)) => commands.insert_resource(CharacterClips { pip, bolt, grumble }),
+    match (pip, bolt, fern, grumble) {
+        (Some(pip), Some(bolt), Some(fern), Some(grumble)) => commands.insert_resource(CharacterClips { pip, bolt, fern, grumble }),
         _ => commands.insert_resource(ClipsMissing),
     }
 }

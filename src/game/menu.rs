@@ -553,7 +553,10 @@ fn navigate(
                 let age = choices.configs[p].age;
                 choices.configs[p].age = if left { age.previous() } else { age.next() };
             }
-            Row::Hero(p) => choices.configs[p].character = choices.configs[p].character.next(),
+            Row::Hero(p) => {
+                let character = choices.configs[p].character;
+                choices.configs[p].character = if left { character.previous() } else { character.next() };
+            }
             Row::World(p) => {
                 let (w, startable) = choices.effective_start_world(p, &names, &saved, worlds.0.len());
                 // Step one world, wrapping around at either end.
@@ -816,6 +819,20 @@ mod tests {
         assert!(!muted(&app), "changing the language must not mute");
         // The key did act on its own row: English moved on to Spanish.
         assert_eq!(app.world().resource::<Language>().0, crate::i18n::Lang::Es);
+    }
+
+    #[test]
+    fn the_hero_row_steps_through_the_three_heroes_both_ways() {
+        let mut choices = MenuChoices::default();
+        choices.open(Page::Main, Row::Hero(0));
+        let mut app = menu_app(choices);
+        let hero = |app: &App| app.world().resource::<MenuChoices>().configs[0].character;
+        assert_eq!(hero(&app), Character::Pip);
+        tap(&mut app, KeyCode::ArrowLeft);
+        assert_eq!(hero(&app), Character::Fern, "Left from the first hero wraps to the last");
+        tap(&mut app, KeyCode::ArrowRight);
+        tap(&mut app, KeyCode::ArrowRight);
+        assert_eq!(hero(&app), Character::Bolt, "Right steps forward");
     }
 
     fn start_world(app: &App, seat: usize) -> usize {
